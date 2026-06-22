@@ -317,11 +317,17 @@ export default function FlowchartCanvas({
           // Text Annotation Layout (Differs completely from button actions)
           if (node.type === 'annotation') {
             const isGrayedOut = trackingDimOverlay;
+            
+            const fontSizeClass = node.fontSize === 'sm' ? 'text-xs' : 
+                                  node.fontSize === 'lg' ? 'text-lg' : 
+                                  node.fontSize === 'xl' ? 'text-xl' : 'text-sm';
+            const fontWeightClass = node.isBold ? 'font-bold' : 'font-medium';
+
             return (
               <div
                 key={node.id}
                 id={`ann_node_${node.id}`}
-                className={`absolute z-20 overflow-visible transition-all duration-300 rounded-xl p-3 flex flex-row items-start gap-2.5 bg-slate-50/90 border border-dashed text-slate-600 font-sans text-xs ${
+                className={`absolute z-20 overflow-visible transition-all duration-300 rounded-xl p-3 flex flex-row items-start gap-2.5 bg-slate-50/90 border border-dashed text-slate-600 font-sans ${
                   isSelected ? 'ring-2 ring-blue-500 border-blue-400 shadow-sm' : 'border-slate-300 hover:border-slate-400'
                 } ${isGrayedOut ? 'opacity-60 grayscale-[0.8] pointer-events-none' : ''}`}
                 style={{
@@ -340,11 +346,16 @@ export default function FlowchartCanvas({
                   onSelectNode(node.id);
                 }}
               >
-                <Icons.AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0 pr-4">
-                  <p className="font-display whitespace-pre-wrap leading-relaxed text-slate-600 font-medium">
+                <Icons.AlertCircle className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0 pr-4 flex flex-col gap-1 overflow-y-auto max-h-full">
+                  <p className={`font-display whitespace-pre-wrap leading-relaxed text-slate-800 ${fontSizeClass} ${fontWeightClass}`}>
                     {node.label || "Custom annotation text goes here..."}
                   </p>
+                  {node.notes && (
+                    <p className="whitespace-pre-wrap leading-relaxed text-slate-500 text-xs italic">
+                      {node.notes}
+                    </p>
+                  )}
                 </div>
 
                 {isEditMode && (
@@ -360,6 +371,11 @@ export default function FlowchartCanvas({
           const isLinkTarget = linkOriginId !== null && linkOriginId !== node.id;
           const isGrayedOut = trackingDimOverlay;
           const isToggleActive = !!activeToggles[node.id];
+          
+          const buttonFontSizeClass = node.fontSize === 'sm' ? 'text-xs' :
+                                      node.fontSize === 'lg' ? 'text-lg' :
+                                      node.fontSize === 'xl' ? 'text-xl' : 'text-[15px]';
+          const buttonFontWeightClass = node.isBold ? 'font-black' : 'font-bold';
 
           return (
             <div
@@ -437,7 +453,7 @@ export default function FlowchartCanvas({
               {/* Main Centered Content */}
               <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
                 <DynamicIcon name={node.icon} className="w-6 h-6 mb-1.5 opacity-90" />
-                <h4 className="font-display font-bold text-[15px] leading-tight text-center text-ellipsis overflow-hidden w-full px-1 text-balance">
+                <h4 className={`font-display leading-tight text-center text-ellipsis overflow-hidden w-full px-1 text-balance ${buttonFontSizeClass} ${buttonFontWeightClass}`}>
                   {node.label || "Action Button"}
                 </h4>
                 {node.notes && (

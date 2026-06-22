@@ -21,6 +21,8 @@ export interface FlowNode {
   hasPrompt: boolean; // Triggers structured popup notes when pressed
   promptQuestion: string; // Multi-choice and custom text input query
   promptPresetAnswers: string[]; // Quick selections
+  fontSize?: 'sm' | 'base' | 'lg' | 'xl';
+  isBold?: boolean;
   color: 'emerald' | 'amber' | 'rose' | 'sky' | 'indigo' | 'slate' | 'violet';
   isToggle?: boolean; // If true, node acts as a Start/Stop toggle
 }

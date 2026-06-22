@@ -456,6 +456,36 @@ export default function App() {
     setPromptState(null);
   };
 
+  // Add ad-hoc timeline note manually during active simulation
+  const handleAdHocNoteSubmit = (note: string) => {
+    if (!isIncidentActive || !incidentSession || !note.trim()) return;
+
+    const now = Date.now();
+    const elapsedSeconds = Math.floor((now - incidentSession.startTime) / 1000);
+    const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
+    const ss = String(elapsedSeconds % 60).padStart(2, '0');
+
+    const formattedTime = new Date(now).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    const loggedItem: LogEntry = {
+      id: `ad_hoc_log_${Date.now()}`,
+      nodeLabel: "Manual Session Note",
+      timestamp: formattedTime,
+      elapsedTime: elapsedSeconds,
+      elapsedFormatted: `${mm}:${ss}`,
+      notes: note.trim(),
+    };
+
+    setIncidentSession({
+      ...incidentSession,
+      logs: [...incidentSession.logs, loggedItem],
+    });
+  };
+
   // Stop Active Emergency tracking and generate chronologic briefing timeline
   const handleCancelLog = (logId: string) => {
     if (!incidentSession) return;
@@ -723,6 +753,7 @@ export default function App() {
             activeLogs={incidentSession?.logs.filter(l => !l.isSystemEvent) || []}
             isMuted={isMuted}
             onSetMuted={setIsMuted}
+            onAdHocNoteSubmit={handleAdHocNoteSubmit}
             onUpdateSelectedNode={handleUpdateSelectedNode}
             onDeleteSelectedNode={handleDeleteSelectedNode}
             onDuplicateSelectedNode={handleDuplicateSelectedNode}

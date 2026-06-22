@@ -30,6 +30,7 @@ interface SidebarProps {
   activeLogs: any[];
   isMuted: boolean;
   onSetMuted: (muted: boolean) => void;
+  onAdHocNoteSubmit: (note: string) => void;
   onUpdateSelectedNode: (updated: Partial<FlowNode>) => void;
   onDeleteSelectedNode: () => void;
   onDuplicateSelectedNode: () => void;
@@ -62,6 +63,7 @@ export default function Sidebar({
   activeLogs,
   isMuted,
   onSetMuted,
+  onAdHocNoteSubmit,
   onUpdateSelectedNode,
   onDeleteSelectedNode,
   onDuplicateSelectedNode,
@@ -219,6 +221,34 @@ export default function Sidebar({
                 ))
               )}
             </div>
+
+            {/* AD-HOC TEXT MANUAL OVERRIDE ENTRY */}
+            <form 
+              className="bg-white border border-slate-200 rounded-xl p-3 flex gap-2 relative shadow-sm hover:border-slate-300 transition-colors"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = e.target as HTMLFormElement;
+                const input = form.elements.namedItem('adhoc-note') as HTMLInputElement;
+                if (input.value.trim()) {
+                  onAdHocNoteSubmit(input.value);
+                  input.value = '';
+                }
+              }}
+            >
+              <input
+                name="adhoc-note"
+                type="text"
+                placeholder="Log manual extra note..."
+                className="flex-1 bg-transparent text-sm text-slate-700 focus:outline-none px-1 h-8"
+                autoComplete="off"
+              />
+              <button 
+                type="submit"
+                className="shrink-0 h-8 w-8 hover:bg-emerald-50 text-emerald-600 rounded-md border border-slate-200 hover:border-emerald-200 flex items-center justify-center transition-colors"
+              >
+                <Icons.CornerDownLeft className="w-4 h-4" />
+              </button>
+            </form>
             
             {/* Quick instructions indicator during live session */}
             <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl space-y-1.5">
@@ -317,6 +347,56 @@ export default function Sidebar({
                     onChange={(e) => onUpdateSelectedNode({ label: e.target.value })}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900"
                   />
+                </div>
+                
+                {/* Font Styling Options */}
+                <div className="flex gap-2">
+                  <div className="flex-1 space-y-1">
+                    <label htmlFor="node_font_size" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                      Text Size
+                    </label>
+                    <select
+                      id="node_font_size"
+                      value={selectedNode.fontSize || 'base'}
+                      onChange={(e) => onUpdateSelectedNode({ fontSize: e.target.value as any })}
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    >
+                      <option value="sm">Small</option>
+                      <option value="base">Standard</option>
+                      <option value="lg">Large</option>
+                      <option value="xl">Extra Large</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1 flex flex-col justify-end">
+                    <label htmlFor="node_font_bold" className="flex items-center gap-1.5 cursor-pointer bg-white border border-slate-200 px-3 py-1.5 rounded-md hover:bg-slate-50 transition-colors h-[30px]">
+                      <input
+                        id="node_font_bold"
+                        type="checkbox"
+                        checked={selectedNode.isBold || false}
+                        onChange={(e) => onUpdateSelectedNode({ isBold: e.target.checked })}
+                        className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                      />
+                      <span className="text-xs font-bold text-slate-700 select-none">Bold</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Sub-text Notes */}
+                <div className="space-y-1">
+                  <label htmlFor="node_notes_edit" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                    {selectedNode.type === 'annotation' ? 'Extra Notes / Content' : 'Sub-text Clinical Guidance'}
+                  </label>
+                  <textarea
+                    id="node_notes_edit"
+                    rows={2}
+                    value={selectedNode.notes}
+                    placeholder={selectedNode.type === 'annotation' ? "Add detailed markdown or text notes..." : "e.g. 1mg IV Push every 3-5 mins"}
+                    onChange={(e) => onUpdateSelectedNode({ notes: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs leading-relaxed text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-y"
+                  />
+                  {selectedNode.type === 'button' && (
+                    <p className="text-[10px] text-slate-400">Displayed in smaller text under button name.</p>
+                  )}
                 </div>
 
                 {/* Properties unique to flow button only */}
@@ -461,21 +541,6 @@ export default function Sidebar({
                     </div>
                   </>
                 )}
-
-                {/* Sub-instructions Notes display */}
-                <div className="space-y-1">
-                  <label htmlFor="node_notes_edit" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
-                    Protocol Notes / Action Guidelines
-                  </label>
-                  <textarea
-                    id="node_notes_edit"
-                    rows={2}
-                    value={selectedNode.notes}
-                    placeholder="Provide quick clinical instruction guides when clicked..."
-                    onChange={(e) => onUpdateSelectedNode({ notes: e.target.value })}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                </div>
 
                 {/* Grid Dimensions & Resizing Block Sliders */}
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
