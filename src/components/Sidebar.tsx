@@ -9,6 +9,7 @@ import { FlowNode, MedicalAlgorithm, FlowConnection } from '../types.ts';
 
 // Dynamic Lucide icon helper
 const DynamicIcon = ({ name, className }: { name: string; className?: string }) => {
+  if (!name || name === 'None') return <span className="w-4 h-4 text-xs flex items-center justify-center font-bold">--</span>;
   if (name === 'LetterA') return <svg className={className || "w-4 h-4"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 20 7-16 7 16"/><path d="m8 14 h8"/></svg>;
   if (name === 'LetterB') return <svg className={className || "w-4 h-4"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>;
   if (name === 'LetterC') return <svg className={className || "w-4 h-4"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 9a6 6 0 1 0 0 6"/></svg>;
@@ -31,6 +32,7 @@ interface SidebarProps {
   onSetMuted: (muted: boolean) => void;
   onUpdateSelectedNode: (updated: Partial<FlowNode>) => void;
   onDeleteSelectedNode: () => void;
+  onDuplicateSelectedNode: () => void;
   onAddNode: (type: 'button' | 'annotation') => void;
   onStartTrackingModeLink: (id: string) => void;
   // Templates & User Library Operations
@@ -45,7 +47,7 @@ interface SidebarProps {
 
 // Medical/Emergency themed icons list
 const CURATED_MEDICAL_ICONS = [
-  'Activity', 'HeartPulse', 'Heart', 'Syringe', 'Pill', 'Flame', 'Clock', 
+  'None', 'Activity', 'HeartPulse', 'Heart', 'Syringe', 'Pill', 'Flame', 'Clock', 
   'Stethoscope', 'ClipboardCheck', 'Droplet', 'UserCheck', 'ShieldAlert', 
   'Layers', 'BadgeAlert', 'AlertCircle', 'PlusSquare', 'Skull', 'Wind',
   'Thermometer', 'Brain', 'Eye', 'Type', 'BookA', 'LetterA', 'LetterB', 'LetterC', 'LetterD', 'LetterE', 'O2Mask'
@@ -62,6 +64,7 @@ export default function Sidebar({
   onSetMuted,
   onUpdateSelectedNode,
   onDeleteSelectedNode,
+  onDuplicateSelectedNode,
   onAddNode,
   onStartTrackingModeLink,
   templates,
@@ -281,14 +284,24 @@ export default function Sidebar({
                   <span className="text-xs font-bold text-slate-800 uppercase font-display tracking-wider">
                     {selectedNode.type === 'annotation' ? 'Edit Annotation Label' : 'Configure Action Button'}
                   </span>
-                  <button
-                    onClick={onDeleteSelectedNode}
-                    className="p-1 text-red-500 hover:bg-red-50 hover:text-red-700 rounded transition"
-                    id="property_delete_node"
-                    title="Delete node from grid"
-                  >
-                    <Icons.Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex space-x-1">
+                    <button
+                      onClick={onDuplicateSelectedNode}
+                      className="p-1 text-blue-500 hover:bg-blue-50 hover:text-blue-700 rounded transition"
+                      id="property_duplicate_node"
+                      title="Duplicate node with current settings"
+                    >
+                      <Icons.Copy className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={onDeleteSelectedNode}
+                      className="p-1 text-red-500 hover:bg-red-50 hover:text-red-700 rounded transition"
+                      id="property_delete_node"
+                      title="Delete node from grid"
+                    >
+                      <Icons.Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Edit node title */}

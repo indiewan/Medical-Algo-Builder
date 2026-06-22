@@ -205,6 +205,31 @@ export default function App() {
     setSelectedNodeId(null);
   };
 
+  // Node duplication from canvas
+  const handleDuplicateSelectedNode = () => {
+    if (!selectedNodeId) return;
+    
+    const nodeToCopy = currentAlgo.nodes.find(n => n.id === selectedNodeId);
+    if (!nodeToCopy) return;
+
+    // determine duplicate spawn coordinates
+    let newY = nodeToCopy.y + 2;
+    if (newY > 12) newY = 12;
+
+    const newNode: FlowNode = {
+      ...nodeToCopy,
+      id: `node_${Date.now()}`,
+      x: nodeToCopy.x,
+      y: newY,
+    };
+
+    setCurrentAlgo({
+      ...currentAlgo,
+      nodes: [...currentAlgo.nodes, newNode],
+    });
+    setSelectedNodeId(newNode.id);
+  };
+
   // Start linkage line creation tool
   const handleStartTrackingModeLink = (id: string) => {
     setLinkOriginId(id);
@@ -700,6 +725,7 @@ export default function App() {
             onSetMuted={setIsMuted}
             onUpdateSelectedNode={handleUpdateSelectedNode}
             onDeleteSelectedNode={handleDeleteSelectedNode}
+            onDuplicateSelectedNode={handleDuplicateSelectedNode}
             onAddNode={handleAddNode}
             onStartTrackingModeLink={handleStartTrackingModeLink}
             templates={MEDICAL_TEMPLATES}
