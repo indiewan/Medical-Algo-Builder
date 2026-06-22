@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { MedicalAlgorithm } from '../types.ts';
 
 /**
@@ -11,11 +12,7 @@ import { MedicalAlgorithm } from '../types.ts';
 export function encodeAlgorithmToUrl(algo: MedicalAlgorithm): string {
   try {
     const jsonStr = JSON.stringify(algo);
-    // Convert to UTF-8 then base64 to handle non-ASCII characters
-    const encoded = btoa(encodeURIComponent(jsonStr).replace(/%([0-9A-F]{2})/g, (_, p1) => {
-      return String.fromCharCode(parseInt(p1, 16));
-    }));
-    return encodeURIComponent(encoded);
+    return compressToEncodedURIComponent(jsonStr);
   } catch (err) {
     console.error('Failed to serialize algorithm to URL', err);
     return '';
@@ -23,11 +20,21 @@ export function encodeAlgorithmToUrl(algo: MedicalAlgorithm): string {
 }
 
 /**
- * Decodes a Base64 string from URL back into a MedicalAlgorithm object.
+ * Decodes a compressed string from URL back into a MedicalAlgorithm object.
  */
 export function decodeAlgorithmFromUrl(str: string): MedicalAlgorithm | null {
   if (!str) return null;
   try {
+    // First try lz-string decompression (new format)
+    const decompressed = decompressFromEncodedURIComponent(str);
+    if (decompressed) {
+      const algo = JSON.parse(decompressed) as MedicalAlgorithm;
+      if (algo && algo.id && algo.name && Array.isArray(algo.nodes)) {
+        return algo;
+      }
+    }
+    
+    // Fallback: try old base64 decoding format if lz decompressed format fails
     const decodedUri = decodeURIComponent(str);
     const decodedStr = decodeURIComponent(
       atob(decodedUri)
