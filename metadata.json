@@ -1,0 +1,6 @@
+{
+  "name": "Medical Algorithm Builder",
+  "description": "An interactive clinical flowchart coordinator, simulation logger, and chronological clinical reporter with speech synthesizer feedback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
