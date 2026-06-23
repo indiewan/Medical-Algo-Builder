@@ -53,7 +53,7 @@ export default function IncidentTimeline({
             <h2 className="text-lg font-bold text-slate-900 font-display">Incident Code Report Completed</h2>
             <p className="text-sm text-slate-500">Review log chronology, edit notes, print to PDF, or export case summary.</p>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
             <button
               onClick={onRestart}
               className="flex items-center gap-2 px-4 py-2 text-slate-700 hover:bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium transition"
@@ -79,6 +79,16 @@ export default function IncidentTimeline({
                 </>
               )}
             </button>
+            {session.snapshotDataUrl && (
+              <a
+                href={session.snapshotDataUrl}
+                download="completed_proforma.png"
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-medium transition cursor-pointer"
+              >
+                <ClipboardList className="w-4 h-4" />
+                Export Proforma Image
+              </a>
+            )}
             <button
               onClick={handlePrint}
               className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-medium transition cursor-pointer"
@@ -141,6 +151,17 @@ export default function IncidentTimeline({
               </div>
             </div>
           </div>
+
+          {/* Proforma Image Export */}
+          {session.snapshotDataUrl && (
+            <div className="mb-12 page-break-after">
+               <h3 className="text-lg font-bold text-slate-900 font-display mb-4 pb-2 border-b border-slate-200">Completed Protocol Snapshot</h3>
+               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-2">
+                 <img src={session.snapshotDataUrl} alt="Completed Protocol" className="w-full h-auto rounded shadow-sm border border-slate-200" />
+               </div>
+               <p className="text-xs text-slate-500 mt-2 font-mono text-center">Snapshot captured at {new Date().toLocaleTimeString()} upon closing the incident code.</p>
+            </div>
+          )}
 
           {/* Timeline Process Flows */}
           <h3 className="text-lg font-bold text-slate-900 font-display mb-6 pb-2 border-b border-slate-200 flex items-center gap-2">

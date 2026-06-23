@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type NodeType = 'button' | 'annotation';
+export type NodeType = 'button' | 'annotation' | 'panel' | 'input' | 'table';
 
 export interface FlowNode {
   id: string;
@@ -21,16 +21,24 @@ export interface FlowNode {
   hasPrompt: boolean; // Triggers structured popup notes when pressed
   promptQuestion: string; // Multi-choice and custom text input query
   promptPresetAnswers: string[]; // Quick selections
-  fontSize?: 'sm' | 'base' | 'lg' | 'xl';
+  fontSize?: 'sm' | 'base' | 'lg' | 'xl' | '2xl' | '3xl';
   isBold?: boolean;
-  color: 'emerald' | 'amber' | 'rose' | 'sky' | 'indigo' | 'slate' | 'violet';
+  color: 'emerald' | 'amber' | 'rose' | 'sky' | 'indigo' | 'slate' | 'violet' | 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'black' | 'white';
   isToggle?: boolean; // If true, node acts as a Start/Stop toggle
+  // Panel specific
+  panelOpacity?: number; // 0 to 100
+  // Input specific
+  inputType?: 'text' | 'time' | 'checkbox';
+  // Table specific
+  tableHeaders?: string[];
+  tableRows?: string[][];
 }
 
 export interface FlowConnection {
   id: string;
   fromId: string;
   toId: string;
+  isDashed?: boolean;
 }
 
 export interface MedicalAlgorithm {
@@ -62,4 +70,5 @@ export interface IncidentSession {
   stopTime?: number; // Timestamp
   isActive: boolean;
   logs: LogEntry[];
+  snapshotDataUrl?: string; // Image export of the chart
 }

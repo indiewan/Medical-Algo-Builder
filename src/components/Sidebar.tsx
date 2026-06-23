@@ -34,8 +34,10 @@ interface SidebarProps {
   onUpdateSelectedNode: (updated: Partial<FlowNode>) => void;
   onDeleteSelectedNode: () => void;
   onDuplicateSelectedNode: () => void;
-  onAddNode: (type: 'button' | 'annotation') => void;
+  onAddNode: (type: 'button' | 'annotation' | 'panel' | 'input' | 'table') => void;
   onStartTrackingModeLink: (id: string) => void;
+  onDeleteConnection: (connId: string) => void;
+  onUpdateConnection: (connId: string, updates: Partial<FlowConnection>) => void;
   // Templates & User Library Operations
   templates: MedicalAlgorithm[];
   userSavedAlgos: MedicalAlgorithm[];
@@ -51,7 +53,8 @@ const CURATED_MEDICAL_ICONS = [
   'None', 'Activity', 'HeartPulse', 'Heart', 'Syringe', 'Pill', 'Flame', 'Clock', 
   'Stethoscope', 'ClipboardCheck', 'Droplet', 'UserCheck', 'ShieldAlert', 
   'Layers', 'BadgeAlert', 'AlertCircle', 'PlusSquare', 'Skull', 'Wind',
-  'Thermometer', 'Brain', 'Eye', 'Type', 'BookA', 'LetterA', 'LetterB', 'LetterC', 'LetterD', 'LetterE', 'O2Mask'
+  'Thermometer', 'Brain', 'Eye', 'Type', 'BookA', 'LetterA', 'LetterB', 'LetterC', 'LetterD', 'LetterE', 'O2Mask',
+  'Bell', 'ArrowRightCircle', 'Copy', 'AlertTriangle', 'Users', 'Search'
 ];
 
 export default function Sidebar({
@@ -69,6 +72,8 @@ export default function Sidebar({
   onDuplicateSelectedNode,
   onAddNode,
   onStartTrackingModeLink,
+  onDeleteConnection,
+  onUpdateConnection,
   templates,
   userSavedAlgos,
   onLoadTemplate,
@@ -176,6 +181,20 @@ export default function Sidebar({
               </div>
             )}
 
+            {/* Guidance / Memory Jogger Box for Selected Node */}
+            {selectedNode && selectedNode.notes && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <Icons.Info className="w-4 h-4 text-amber-600" />
+                  <h4 className="text-[11px] uppercase tracking-wider font-bold text-amber-800">Available Information</h4>
+                </div>
+                <h5 className="text-sm font-bold text-amber-900 mb-1">{selectedNode.label}</h5>
+                <p className="text-xs text-amber-900/80 whitespace-pre-wrap font-medium">
+                  {selectedNode.notes}
+                </p>
+              </div>
+            )}
+
             {/* List log items inside current run session */}
             <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden bg-slate-50/55 max-h-[300px] overflow-y-auto">
               {activeLogs.length === 0 ? (
@@ -261,22 +280,6 @@ export default function Sidebar({
               </p>
             </div>
 
-            {/* Process Efficiency telemetric bar widget */}
-            <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider font-display">Process Efficiency</span>
-                <span className="text-xs font-bold font-mono text-emerald-700">94%</span>
-              </div>
-              <div className="flex gap-1 h-3">
-                <div className="flex-1 bg-emerald-500 rounded-sm"></div>
-                <div className="flex-1 bg-emerald-400 rounded-sm"></div>
-                <div className="flex-1 bg-emerald-300 rounded-sm"></div>
-                <div className="flex-1 bg-emerald-200 rounded-sm"></div>
-                <div className="flex-1 bg-slate-200 rounded-sm"></div>
-              </div>
-              <p className="text-[10px] text-emerald-800 mt-2 font-mono">All critical resuscitation actions logged within ±5s.</p>
-            </div>
-
           </div>
         )}
 
@@ -290,19 +293,40 @@ export default function Sidebar({
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => onAddNode('button')}
-                  className="flex items-center gap-2 justify-center py-2.5 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                  className="flex items-center gap-2 justify-center py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800 transition active:scale-95 cursor-pointer shadow-sm"
                   id="add_node_btn"
                 >
                   <Icons.SquareTerminal className="w-3.5 h-3.5" />
-                  + Task Button
+                  + Button
                 </button>
                 <button
                   onClick={() => onAddNode('annotation')}
-                  className="flex items-center gap-2 justify-center py-2.5 bg-white text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold hover:bg-slate-50 transition active:scale-95 cursor-pointer"
+                  className="flex items-center gap-2 justify-center py-2 bg-white text-slate-800 border border-slate-200 rounded-xl text-xs font-semibold hover:bg-slate-50 transition active:scale-95 cursor-pointer shadow-sm"
                   id="add_node_anno"
                 >
                   <Icons.Type className="w-3.5 h-3.5" />
-                  + Text Label
+                  + Text
+                </button>
+                <button
+                  onClick={() => onAddNode('panel')}
+                  className="flex items-center gap-2 justify-center py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold hover:bg-blue-100 transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <Icons.Square className="w-3.5 h-3.5" />
+                  + Panel Area
+                </button>
+                <button
+                  onClick={() => onAddNode('input')}
+                  className="flex items-center gap-2 justify-center py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-semibold hover:bg-emerald-100 transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <Icons.Keyboard className="w-3.5 h-3.5" />
+                  + Input Field
+                </button>
+                <button
+                  onClick={() => onAddNode('table')}
+                  className="col-span-2 flex items-center gap-2 justify-center py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-xs font-semibold hover:bg-purple-100 transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <Icons.Table className="w-3.5 h-3.5" />
+                  + Data Table Grid
                 </button>
               </div>
             </div>
@@ -381,23 +405,117 @@ export default function Sidebar({
                   </div>
                 </div>
 
-                {/* Sub-text Notes */}
+                {/* Description / Memory Jogger Notes */}
                 <div className="space-y-1">
                   <label htmlFor="node_notes_edit" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
-                    {selectedNode.type === 'annotation' ? 'Extra Notes / Content' : 'Sub-text Clinical Guidance'}
+                    {selectedNode.type === 'annotation' ? 'Extra Notes / Content' : 'Memory Jogger Info (Notes)'}
                   </label>
                   <textarea
                     id="node_notes_edit"
-                    rows={2}
-                    value={selectedNode.notes}
-                    placeholder={selectedNode.type === 'annotation' ? "Add detailed markdown or text notes..." : "e.g. 1mg IV Push every 3-5 mins"}
+                    rows={3}
+                    value={selectedNode.notes || ''}
+                    placeholder={selectedNode.type === 'annotation' ? "Add detailed markdown or text notes..." : "e.g. 1mg IV Push every 3-5 mins, flush line afterwards."}
                     onChange={(e) => onUpdateSelectedNode({ notes: e.target.value })}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs leading-relaxed text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-y"
                   />
                   {selectedNode.type === 'button' && (
-                    <p className="text-[10px] text-slate-400">Displayed in smaller text under button name.</p>
+                    <p className="text-[10px] text-slate-400">Can be viewed rapidly during incident logging.</p>
                   )}
                 </div>
+
+                {/* Pre-set CSS High Contrast Thème Colors options */}
+                {selectedNode.type !== 'annotation' && selectedNode.type !== 'input' && (
+                  <div className="space-y-1">
+                    <label htmlFor="node_theme_color" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                      Color Theme
+                    </label>
+                    <select
+                      id="node_theme_color"
+                      value={selectedNode.color}
+                      onChange={(e) => onUpdateSelectedNode({ color: e.target.value as any })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    >
+                      <option value="rose">🔴 Critical / Warning (Rose)</option>
+                      <option value="amber">🟡 Assess (Amber)</option>
+                      <option value="emerald">🟢 Drug / Treatment (Emerald)</option>
+                      <option value="sky">🔵 Fluids (Sky)</option>
+                      <option value="indigo">🟣 Diagnostic (Indigo)</option>
+                      <option value="violet">🧬 Protocol (Violet)</option>
+                      <option value="slate">⚪ Default (Slate)</option>
+                      <option value="red">🟥 Solid Red</option>
+                      <option value="orange">🟧 Solid Orange</option>
+                      <option value="yellow">🟨 Solid Yellow</option>
+                      <option value="green">🟩 Solid Green</option>
+                      <option value="blue">🟦 Solid Blue</option>
+                      <option value="black">⬛ Solid Black</option>
+                      <option value="white">⬜ Solid White</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* Properties for Input Nodes */}
+                {selectedNode.type === 'input' && (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label htmlFor="node_input_type" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                        Input Form Type
+                      </label>
+                      <select
+                        id="node_input_type"
+                        value={selectedNode.inputType || 'text'}
+                        onChange={(e) => onUpdateSelectedNode({ inputType: e.target.value as any })}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      >
+                        <option value="text">Text Field</option>
+                        <option value="checkbox">Toggle Checkbox</option>
+                        <option value="time">Time Selection</option>
+                      </select>
+                    </div>
+                    {selectedNode.inputType !== 'checkbox' && (
+                       <div className="space-y-1">
+                          <label htmlFor="node_input_placeholder" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                            Placeholder Text
+                          </label>
+                          <input
+                            id="node_input_placeholder"
+                            type="text"
+                            value={selectedNode.placeholder || ''}
+                            onChange={(e) => onUpdateSelectedNode({ placeholder: e.target.value })}
+                            placeholder="e.g. 100 mmHg"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          />
+                       </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Properties for Table Grid Nodes */}
+                {selectedNode.type === 'table' && (
+                  <div className="space-y-3">
+                     <div className="space-y-1">
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                            Table Headers (Comma Separated)
+                          </label>
+                          <input
+                            type="text"
+                            value={(selectedNode.tableHeaders || []).join(', ')}
+                            onChange={(e) => onUpdateSelectedNode({ tableHeaders: e.target.value.split(',').map(s=>s.trim()) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                          />
+                     </div>
+                     <div className="space-y-1">
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                            Initial Rows (One Row per line, Comma separated)
+                          </label>
+                          <textarea
+                            rows={4}
+                            value={(selectedNode.tableRows || []).map(r => r.join(', ')).join('\n')}
+                            onChange={(e) => onUpdateSelectedNode({ tableRows: e.target.value.split('\n').map(r => r.split(',').map(s=>s.trim())) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900 resize-y"
+                          />
+                     </div>
+                  </div>
+                )}
 
                 {/* Properties unique to flow button only */}
                 {selectedNode.type === 'button' && (
@@ -424,27 +542,6 @@ export default function Sidebar({
                           </button>
                         ))}
                       </div>
-                    </div>
-
-                    {/* Pre-set CSS High Contrast Thème Colors options */}
-                    <div className="space-y-1">
-                      <label htmlFor="node_theme_color" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
-                        Color Accent Theme
-                      </label>
-                      <select
-                        id="node_theme_color"
-                        value={selectedNode.color}
-                        onChange={(e) => onUpdateSelectedNode({ color: e.target.value as any })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                      >
-                        <option value="rose">🔴 Critical / Warning (Rose)</option>
-                        <option value="amber">🟡 Assess / Intermediate (Amber)</option>
-                        <option value="emerald">🟢 Drug / Treatment (Emerald)</option>
-                        <option value="sky">🔵 Fluids / Resuscitate (Sky)</option>
-                        <option value="indigo">🟣 Diagnostic / Labs (Indigo)</option>
-                        <option value="violet">🧬 Secondary Protocol (Violet)</option>
-                        <option value="slate">⚪ Default Clinical (Slate)</option>
-                      </select>
                     </div>
 
                     {/* Speech Vocal Confirmation Settings */}
@@ -556,7 +653,7 @@ export default function Sidebar({
                       </button>
                       <span id="width_value_label" className="text-xs font-semibold text-slate-800">{selectedNode.width}</span>
                       <button
-                        onClick={() => onUpdateSelectedNode({ width: Math.min(6, selectedNode.width + 1) })}
+                        onClick={() => onUpdateSelectedNode({ width: Math.min(24, selectedNode.width + 1) })}
                         className="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-xs text-slate-700 font-bold"
                         id="width_inc_btn"
                       >
@@ -577,7 +674,7 @@ export default function Sidebar({
                       </button>
                       <span id="height_value_label" className="text-xs font-semibold text-slate-800">{selectedNode.height}</span>
                       <button
-                        onClick={() => onUpdateSelectedNode({ height: Math.min(4, selectedNode.height + 1) })}
+                        onClick={() => onUpdateSelectedNode({ height: Math.min(24, selectedNode.height + 1) })}
                         className="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-xs text-slate-700 font-bold"
                         id="height_inc_btn"
                       >
@@ -588,18 +685,52 @@ export default function Sidebar({
                 </div>
 
                 {/* Direct quick linkage tool instruction */}
-                {selectedNode.type === 'button' && (
+                {selectedNode && (
                   <div className="pt-2 border-t border-slate-100">
                     <button
                       onClick={() => onStartTrackingModeLink(selectedNode.id)}
-                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold transition"
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold transition mb-2"
                       id="card_link_action"
                     >
                       <Icons.Link className="w-3.5 h-3.5" />
                       Arrow Connector Connection
                     </button>
-                    <p className="text-[10px] text-slate-400 text-center mt-1">
-                      Tap and then click another block to construct flow connectors.
+                    
+                    {/* Outgoing Connectors */}
+                    {selectedAlgo.connections.filter(c => c.fromId === selectedNode.id).length > 0 && (
+                      <div className="mt-3 space-y-1.5">
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Outgoing Arrows</label>
+                        {selectedAlgo.connections.filter(c => c.fromId === selectedNode.id).map(conn => {
+                          const toNode = selectedAlgo.nodes.find(n => n.id === conn.toId);
+                          return (
+                            <div key={conn.id} className="flex items-center justify-between text-xs bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg shadow-sm">
+                              <span className="truncate text-slate-600 font-medium pr-2">To: {toNode ? toNode.label : 'Unknown'}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <label className="flex items-center text-[10px] text-slate-500 cursor-pointer">
+                                  <input 
+                                    type="checkbox" 
+                                    className="mr-1"
+                                    checked={!!conn.isDashed}
+                                    onChange={(e) => onUpdateConnection(conn.id, { isDashed: e.target.checked })}
+                                  />
+                                  Dotted
+                                </label>
+                                <button
+                                  onClick={() => onDeleteConnection(conn.id)}
+                                  className="text-slate-400 hover:text-red-600 transition-colors"
+                                  title="Remove connection arrow"
+                                >
+                                  <Icons.X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    
+                    <p className="text-[10px] text-slate-400 text-center mt-3">
+                      Tap the button above then click another block to draw an arrow connector.
                     </p>
                   </div>
                 )}

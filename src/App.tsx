@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import * as Icons from 'lucide-react';
+import { toPng } from 'html-to-image';
 
 import { FlowNode, FlowConnection, MedicalAlgorithm, IncidentSession, LogEntry } from './types.ts';
 import { MEDICAL_TEMPLATES } from './templates.ts';
@@ -141,66 +142,113 @@ export default function App() {
   };
 
   // Node adding logic handler
-  const handleAddNode = (type: 'button' | 'annotation') => {
+  const handleAddNode = (type: 'button' | 'annotation' | 'panel' | 'input' | 'table') => {
     let newY = 0;
     if (currentAlgo.nodes.length > 0) {
       newY = Math.max(...currentAlgo.nodes.map((n) => n.y)) + 2;
     }
     // Stay within max boundaries
-    if (newY > 12) newY = 12;
+    if (newY > 20) newY = 20;
 
-    const defaultTitle = type === 'button' ? 'Treatment/Assessment Step' : 'Remember to check airway guidelines';
+    const defaultTitle = 
+      type === 'button' ? 'Action / Step' : 
+      type === 'annotation' ? 'Note / Info' : 
+      type === 'panel' ? 'STAGE 1' : 
+      type === 'input' ? 'Patient Value' : 
+      'Data Table';
+
+    const defaultWidth = 
+      type === 'panel' ? 8 : 
+      type === 'table' ? 6 : 
+      type === 'button' || type === 'input' ? 3 : 
+      4;
+
+    const defaultHeight = 
+      type === 'panel' ? 6 : 
+      type === 'table' ? 4 : 
+      type === 'button' ? 2 : 
+      type === 'input' ? 2 : 
+      2;
+
+    const defaultColor = type === 'panel' ? 'emerald' : type === 'input' ? 'slate' : type === 'table' ? 'slate' : 'slate';
+
     const newNode: FlowNode = {
       id: `node_${Date.now()}`,
       type,
       label: defaultTitle,
-      icon: type === 'button' ? 'Activity' : 'AlertCircle',
-      x: 4,
+      icon: type === 'button' ? 'Activity' : type === 'input' ? 'PenLine' : type === 'table' ? 'Table' : 'AlertCircle',
+      x: type === 'panel' ? 0 : 2,
       y: newY,
-      width: type === 'button' ? 2 : 4,
-      height: 2,
+      width: defaultWidth,
+      height: defaultHeight,
       notes: '',
       vocalConfirmation: type === 'button',
-      vocalMessage: type === 'button' ? `${defaultTitle} and logging timestamp.` : '',
+      vocalMessage: type === 'button' ? `${defaultTitle} action logged.` : '',
       hasPrompt: false,
       promptQuestion: '',
       promptPresetAnswers: [],
-      color: 'slate',
+      color: defaultColor,
+      panelOpacity: type === 'panel' ? 20 : undefined,
+      inputType: type === 'input' ? 'text' : undefined,
+      tableHeaders: type === 'table' ? ['Action', 'Time'] : undefined,
+      tableRows: type === 'table' ? [['', ''], ['', '']] : undefined,
     };
 
-    setCurrentAlgo({
-      ...currentAlgo,
-      nodes: [...currentAlgo.nodes, newNode],
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        nodes: [...prev.nodes, newNode],
+      };
     });
     setSelectedNodeId(newNode.id);
   };
 
   // Node coordinates drag aligner
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
-    setCurrentAlgo({
-      ...currentAlgo,
-      nodes: currentAlgo.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        nodes: prev.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
+      };
+    });
+  };
+
+  const handleUpdateNodeDimensions = (id: string, width: number, height: number) => {
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        nodes: prev.nodes.map((n) => (n.id === id ? { ...n, width, height } : n)),
+      };
     });
   };
 
   // Selected parameters tag updating
   const handleUpdateSelectedNode = (updated: Partial<FlowNode>) => {
     if (!selectedNodeId) return;
-    setCurrentAlgo({
-      ...currentAlgo,
-      nodes: currentAlgo.nodes.map((n) => (n.id === selectedNodeId ? { ...n, ...updated } as FlowNode : n)),
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        nodes: prev.nodes.map((n) => (n.id === selectedNodeId ? { ...n, ...updated } as FlowNode : n)),
+      };
     });
   };
 
   // Node deletion from canvas
   const handleDeleteSelectedNode = () => {
     if (!selectedNodeId) return;
-    setCurrentAlgo({
-      ...currentAlgo,
-      nodes: currentAlgo.nodes.filter((n) => n.id !== selectedNodeId),
-      connections: currentAlgo.connections.filter(
-        (c) => c.fromId !== selectedNodeId && c.toId !== selectedNodeId
-      ),
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        nodes: prev.nodes.filter((n) => n.id !== selectedNodeId),
+        connections: prev.connections.filter(
+          (c) => c.fromId !== selectedNodeId && c.toId !== selectedNodeId
+        ),
+      };
     });
     setSelectedNodeId(null);
   };
@@ -223,9 +271,12 @@ export default function App() {
       y: newY,
     };
 
-    setCurrentAlgo({
-      ...currentAlgo,
-      nodes: [...currentAlgo.nodes, newNode],
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        nodes: [...prev.nodes, newNode],
+      };
     });
     setSelectedNodeId(newNode.id);
   };
@@ -242,31 +293,51 @@ export default function App() {
       return;
     }
 
-    // Check duplicate
-    const exists = currentAlgo.connections.some(
-      (c) => c.fromId === linkOriginId && c.toId === targetId
-    );
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      
+      const exists = prev.connections.some(
+        (c) => c.fromId === linkOriginId && c.toId === targetId
+      );
 
-    if (!exists) {
-      const newConn: FlowConnection = {
-        id: `conn_${Date.now()}`,
-        fromId: linkOriginId,
-        toId: targetId,
-      };
-      setCurrentAlgo({
-        ...currentAlgo,
-        connections: [...currentAlgo.connections, newConn],
-      });
-    }
+      if (!exists) {
+        const newConn: FlowConnection = {
+          id: `conn_${Date.now()}`,
+          fromId: linkOriginId,
+          toId: targetId,
+        };
+        return {
+          ...prev,
+          connections: [...prev.connections, newConn],
+        };
+      }
+      
+      return prev;
+    });
 
     setLinkOriginId(null);
   };
 
   // Drop connection line handle arrow
   const handleDeleteConnection = (connId: string) => {
-    setCurrentAlgo({
-      ...currentAlgo,
-      connections: currentAlgo.connections.filter((c) => c.id !== connId),
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        connections: prev.connections.filter((c) => c.id !== connId),
+      };
+    });
+  };
+
+  const handleUpdateConnection = (connId: string, updates: Partial<FlowConnection>) => {
+    setCurrentAlgo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        connections: prev.connections.map((c) => 
+          c.id === connId ? { ...c, ...updates } : c
+        ),
+      };
     });
   };
 
@@ -357,9 +428,37 @@ export default function App() {
   };
 
   // Clicking an active process step button during logging code
+  const handleDataLog = (labelPrefix: string, value: string) => {
+    if (!isIncidentActive || !incidentSession) return;
+    const now = Date.now();
+    const elapsedSeconds = Math.floor((now - incidentSession.startTime) / 1000);
+    const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
+    const ss = String(elapsedSeconds % 60).padStart(2, '0');
+
+    const formattedTime = new Date(now).toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+
+    const loggedItem: LogEntry = {
+      id: `data_log_${Date.now()}`,
+      nodeId: 'none',
+      nodeLabel: `${labelPrefix}: ${value}`,
+      timestamp: formattedTime,
+      elapsedTime: elapsedSeconds,
+      elapsedFormatted: `${mm}:${ss}`,
+    };
+
+    setIncidentSession((prev) => 
+      prev ? { ...prev, logs: [...prev.logs, loggedItem] } : null
+    );
+  };
+
   const handleNodeClickInTracking = (node: FlowNode) => {
     if (!isIncidentActive || !incidentSession) return;
     
+    // Automatically show guidance / memory jogger in the sidebar
+    setSelectedNodeId(node.id);
+
     const now = Date.now();
     const elapsedSeconds = Math.floor((now - incidentSession.startTime) / 1000);
     const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
@@ -498,8 +597,40 @@ export default function App() {
     });
   };
 
-  const handleStopIncident = () => {
+  const handleStopIncident = async () => {
     if (!incidentSession) return;
+
+    let snapshotDataUrl = undefined;
+    try {
+      const el = document.getElementById('flowchart-canvas-container');
+      if (el) {
+         let maxX = 0;
+         let maxY = 0;
+         if (currentAlgo && currentAlgo.nodes) {
+           currentAlgo.nodes.forEach(node => {
+             const rightPx = (node.x + node.width) * 100;
+             const bottomPx = (node.y + node.height) * 60;
+             if (rightPx > maxX) maxX = rightPx;
+             if (bottomPx > maxY) maxY = bottomPx;
+           });
+         }
+         
+         const trimmedWidth = maxX > 0 ? maxX + 100 : el.offsetWidth;
+         const trimmedHeight = maxY > 0 ? maxY + 100 : el.offsetHeight;
+         
+         snapshotDataUrl = await toPng(el, { 
+           backgroundColor: '#f8fafc',
+           width: trimmedWidth,
+           height: trimmedHeight,
+           style: {
+             width: `${trimmedWidth}px`,
+             height: `${trimmedHeight}px`,
+           }
+         });
+      }
+    } catch (e) {
+      console.error("Failed to capture proforma image", e);
+    }
 
     const stopMs = Date.now();
     const formattedDate = new Date(stopMs).toLocaleTimeString('en-US', {
@@ -526,6 +657,7 @@ export default function App() {
       stopTime: stopMs,
       isActive: false,
       logs: [...incidentSession.logs, finalLog],
+      snapshotDataUrl
     };
 
     setIncidentSession(finalSession);
@@ -607,7 +739,10 @@ export default function App() {
                 type="text"
                 value={currentAlgo.name}
                 id="algo_name_title_edit"
-                onChange={(e) => setCurrentAlgo({ ...currentAlgo, name: e.target.value })}
+                onChange={(e) => setCurrentAlgo((prev) => {
+                  if (!prev) return prev;
+                  return { ...prev, name: e.target.value };
+                })}
                 className="font-display font-bold text-lg text-slate-800 border-b border-dashed border-slate-300 hover:border-slate-500 focus:outline-none focus:border-slate-900 w-full bg-transparent max-w-[280px] sm:max-w-[420px]"
                 title="Click to rename clinical protocol"
               />
@@ -621,7 +756,10 @@ export default function App() {
                 type="text"
                 value={currentAlgo.description || ''}
                 id="algo_desc_edit"
-                onChange={(e) => setCurrentAlgo({ ...currentAlgo, description: e.target.value })}
+                onChange={(e) => setCurrentAlgo((prev) => {
+                  if (!prev) return prev;
+                  return { ...prev, description: e.target.value };
+                })}
                 className="text-xs text-slate-500 mt-0.5 border-b border-dashed border-slate-300 hover:border-slate-500 focus:outline-none focus:border-slate-900 w-full bg-transparent max-w-[280px] sm:max-w-[420px]"
                 title="Click to edit clinical protocol description"
                 placeholder="Interactive clinical rescue checklist."
@@ -735,7 +873,9 @@ export default function App() {
             linkOriginId={linkOriginId}
             onSelectNode={setSelectedNodeId}
             onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
+            onUpdateNodeDimensions={handleUpdateNodeDimensions}
             onNodeClickInTracking={handleNodeClickInTracking}
+            onDataLog={handleDataLog}
             onStartTrackingModeLink={handleStartTrackingModeLink}
             onCompleteLink={handleCompleteLink}
             onDeleteConnection={handleDeleteConnection}
@@ -759,6 +899,8 @@ export default function App() {
             onDuplicateSelectedNode={handleDuplicateSelectedNode}
             onAddNode={handleAddNode}
             onStartTrackingModeLink={handleStartTrackingModeLink}
+            onDeleteConnection={handleDeleteConnection}
+            onUpdateConnection={handleUpdateConnection}
             templates={MEDICAL_TEMPLATES}
             userSavedAlgos={userSavedAlgos}
             onLoadTemplate={handleLoadTemplate}

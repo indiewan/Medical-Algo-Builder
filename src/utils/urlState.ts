@@ -17,7 +17,7 @@ function minifyAlgorithm(algo: MedicalAlgorithm): any {
         x: node.x,
         y: node.y,
         l: node.label,
-        t: node.type === 'button' ? 'b' : 'a'
+        t: node.type === 'button' ? 'b' : node.type === 'annotation' ? 'a' : node.type === 'panel' ? 'p' : node.type === 'input' ? 'i' : node.type === 'table' ? 'tb' : 'b'
       };
       if (node.width !== 4) mn.w = node.width;
       if (node.height !== 2) mn.h = node.height;
@@ -33,6 +33,10 @@ function minifyAlgorithm(algo: MedicalAlgorithm): any {
       if (node.placeholder) mn.ph = node.placeholder;
       if (node.vocalConfirmation) mn.vc = 1;
       if (node.vocalMessage) mn.vm = node.vocalMessage;
+      if (node.panelOpacity !== undefined) mn.po = node.panelOpacity;
+      if (node.inputType) mn.in = node.inputType;
+      if (node.tableHeaders) mn.th = node.tableHeaders;
+      if (node.tableRows) mn.tr = node.tableRows;
       return mn;
     }),
     cn: algo.connections ? algo.connections.map(conn => {
@@ -71,7 +75,7 @@ function expandAlgorithm(minified: any): MedicalAlgorithm {
         height: mNode.h || 2,
         label: mNode.l || '',
         notes: mNode.nt || '',
-        type: mNode.t === 'a' ? 'annotation' : 'button',
+        type: mNode.t === 'a' ? 'annotation' : mNode.t === 'p' ? 'panel' : mNode.t === 'i' ? 'input' : mNode.t === 'tb' ? 'table' : 'button',
         icon: mNode.ic || 'None',
         hasPrompt: !!mNode.hp,
         promptQuestion: mNode.pq || '',
@@ -82,7 +86,11 @@ function expandAlgorithm(minified: any): MedicalAlgorithm {
         isToggle: !!mNode.it,
         placeholder: mNode.ph || undefined,
         vocalConfirmation: !!mNode.vc,
-        vocalMessage: mNode.vm || ''
+        vocalMessage: mNode.vm || '',
+        panelOpacity: mNode.po,
+        inputType: mNode.in,
+        tableHeaders: mNode.th,
+        tableRows: mNode.tr
       };
       return node;
     });
