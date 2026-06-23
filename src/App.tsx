@@ -160,15 +160,15 @@ export default function App() {
     const defaultWidth = 
       type === 'panel' ? 8 : 
       type === 'table' ? 6 : 
-      type === 'button' || type === 'input' ? 3 : 
+      type === 'button' || type === 'input' ? 2.5 : 
       4;
 
     const defaultHeight = 
       type === 'panel' ? 6 : 
       type === 'table' ? 4 : 
-      type === 'button' ? 2 : 
-      type === 'input' ? 2 : 
-      2;
+      type === 'button' ? 1 : 
+      type === 'input' ? 1 : 
+      1.5;
 
     const defaultColor = type === 'panel' ? 'emerald' : type === 'input' ? 'slate' : type === 'table' ? 'slate' : 'slate';
 
@@ -205,12 +205,19 @@ export default function App() {
   };
 
   // Node coordinates drag aligner
-  const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
+  const handleUpdateNodeCoordinates = (idOrUpdates: string | {id: string, x: number, y: number}[], x?: number, y?: number) => {
     setCurrentAlgo((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        nodes: prev.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
+        nodes: prev.nodes.map((n) => {
+          if (Array.isArray(idOrUpdates)) {
+            const update = idOrUpdates.find(u => u.id === n.id);
+            return update ? { ...n, x: update.x, y: update.y } : n;
+          } else {
+            return n.id === idOrUpdates ? { ...n, x: x!, y: y! } : n;
+          }
+        }),
       };
     });
   };

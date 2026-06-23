@@ -30,7 +30,7 @@ interface FlowchartCanvasProps {
   selectedNodeId: string | null;
   linkOriginId: string | null; // For connecting nodes together
   onSelectNode: (id: string | null) => void;
-  onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
+  onUpdateNodeCoordinates: (updates: {id: string, x: number, y: number}[] | string, x?: number, y?: number) => void;
   onUpdateNodeDimensions?: (id: string, width: number, height: number) => void;
   onNodeClickInTracking: (node: FlowNode) => void;
   onDataLog?: (labelPrefix: string, value: string) => void;
@@ -67,9 +67,19 @@ export default function FlowchartCanvas({
   activeToggles,
 }: FlowchartCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const panningStartPos = useRef({ x: 0, y: 0 });
+  const panningScrollStart = useRef({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
   
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [marqueeStart, setMarqueeStart] = useState<{x: number, y: number} | null>(null);
+  const [marqueeCurrent, setMarqueeCurrent] = useState<{x: number, y: number} | null>(null);
+  const [dragStartPos, setDragStartPos] = useState<{x: number, y: number} | null>(null);
+  const [dragNodesInitialPos, setDragNodesInitialPos] = useState<Map<string, {x: number, y: number}>>(new Map());
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [dragPos, setDragPos] = useState({ x: 0, y: 0 }); // Current mouse/pointer position relative to canvas
 
@@ -81,65 +91,91 @@ export default function FlowchartCanvas({
 
   // Handle snapping calculation
   const getSnapCoords = (pixelsX: number, pixelsY: number, sizeC: number, sizeR: number) => {
-    let x = Math.round(pixelsX / CELL_WIDTH);
-    let y = Math.round(pixelsY / CELL_HEIGHT);
+    let x = pixelsX / CELL_WIDTH;
+    let y = pixelsY / CELL_HEIGHT;
     // Boundary check
     x = Math.max(0, Math.min(GRID_COLS - sizeC, x));
     y = Math.max(0, Math.min(GRID_ROWS - sizeR, y));
     return { x, y };
   };
 
+  
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>, node: FlowNode) => {
     if (!isEditMode) return;
     if (linkOriginId) return; // Linking tool takes precedence
 
     e.stopPropagation();
-    // Record selection
-    onSelectNode(node.id);
-
-    // Save offset
-    const rect = e.currentTarget.getBoundingClientRect();
-    const parentRect = containerRef.current?.getBoundingClientRect();
-    if (!parentRect) return;
-
-    setDraggingId(node.id);
-    setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
-    setDragPos({
-      x: rect.left - parentRect.left,
-      y: rect.top - parentRect.top,
-    });
     
+    let newSelectedIds = selectedIds;
+    // Highlight dragging selection
+    if (!e.shiftKey && !selectedIds.has(node.id)) {
+      newSelectedIds = new Set([node.id]);
+      setSelectedIds(newSelectedIds);
+      onSelectNode(node.id);
+    } else if (e.shiftKey) {
+      newSelectedIds = new Set(selectedIds);
+      if (newSelectedIds.has(node.id)) newSelectedIds.delete(node.id);
+      else newSelectedIds.add(node.id);
+      setSelectedIds(newSelectedIds);
+      onSelectNode(newSelectedIds.size > 0 ? (Array.from(newSelectedIds) as string[])[newSelectedIds.size - 1] : null);
+    }
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Start dragging
+    setDraggingId(node.id);
+    setDragStartPos({ x: e.clientX, y: e.clientY });
     e.currentTarget.setPointerCapture(e.pointerId);
+
+    const initials = new Map();
+    nodes.forEach(n => {
+       if (newSelectedIds.has(n.id)) {
+          initials.set(n.id, { x: n.x, y: n.y });
+       }
+    });
+    setDragNodesInitialPos(initials);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>, node: FlowNode) => {
-    if (draggingId !== node.id || !containerRef.current) return;
-    e.stopPropagation();
+    if (draggingId !== node.id || !dragStartPos) return;
 
-    const parentRect = containerRef.current.getBoundingClientRect();
-    const candidateX = e.clientX - parentRect.left - dragOffset.x;
-    const candidateY = e.clientY - parentRect.top - dragOffset.y;
-
-    setDragPos({ x: candidateX, y: candidateY });
+    const deltaXBlocks = (e.clientX - dragStartPos.x) / zoom / CELL_WIDTH;
+    const deltaYBlocks = (e.clientY - dragStartPos.y) / zoom / CELL_HEIGHT;
+    
+    // We store the pointer delta visually using dragPos for rerenders.
+    setDragPos({ x: deltaXBlocks, y: deltaYBlocks });
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>, node: FlowNode) => {
-    if (resizingId === node.id) {
-       // Cannot release capture on different element normally? But we bound it to the resize handle
-       // Actually handled in handleResizeEnd. We'll ignore here if dragging.
-    }
-    
     if (draggingId !== node.id) return;
-    e.stopPropagation();
+    
     e.currentTarget.releasePointerCapture(e.pointerId);
     setDraggingId(null);
 
-    // Calculate final snapped block coordinate
-    const snapped = getSnapCoords(dragPos.x, dragPos.y, node.width, node.height);
-    onUpdateNodeCoordinates(node.id, snapped.x, snapped.y);
+    const deltaXBlocks = (e.clientX - dragStartPos!.x) / zoom / CELL_WIDTH;
+    const deltaYBlocks = (e.clientY - dragStartPos!.y) / zoom / CELL_HEIGHT;
+
+    const updates = Array.from(dragNodesInitialPos.entries()).map(([nId, initPos]) => {
+      // Snapping block pos to exact 0.5 increments for subtle snapping or exactly what dragging suggests
+      // Since zoom and grid are involved, no magnetic snap is used, just direct placement.
+      // But we prevent going out of bounds
+      const targetN = nodes.find(n => n.id === nId);
+      let nx = initPos.x + deltaXBlocks;
+      let ny = initPos.y + deltaYBlocks;
+      if (targetN) {
+         nx = Math.max(0, Math.min(GRID_COLS - targetN.width, nx));
+         ny = Math.max(0, Math.min(GRID_ROWS - targetN.height, ny));
+      }
+      return { id: nId, x: nx, y: ny };
+    });
+
+    if (updates.length > 0) {
+      onUpdateNodeCoordinates(updates as any);
+    }
+    
+    setDragNodesInitialPos(new Map());
+    setDragPos({x: 0, y: 0});
   };
 
   const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>, node: FlowNode) => {
@@ -162,12 +198,12 @@ export default function FlowchartCanvas({
     e.stopPropagation();
     e.currentTarget.releasePointerCapture(e.pointerId);
     
-    const deltaX = resizeCurrentPos.x - resizeStartPos.x;
-    const deltaY = resizeCurrentPos.y - resizeStartPos.y;
-    const deltaW = Math.round(deltaX / CELL_WIDTH);
-    const deltaH = Math.round(deltaY / CELL_HEIGHT);
-    const newW = Math.max(1, Math.min(24, resizeStartDims.width + deltaW));
-    const newH = Math.max(1, Math.min(24, resizeStartDims.height + deltaH));
+    const deltaX = (resizeCurrentPos.x - resizeStartPos.x) / zoom;
+    const deltaY = (resizeCurrentPos.y - resizeStartPos.y) / zoom;
+    const deltaW = Math.round((deltaX / CELL_WIDTH) * 4) / 4;
+    const deltaH = Math.round((deltaY / CELL_HEIGHT) * 4) / 4;
+    const newW = Math.max(0.5, Math.min(24, resizeStartDims.width + deltaW));
+    const newH = Math.max(0.5, Math.min(24, resizeStartDims.height + deltaH));
     
     if (onUpdateNodeDimensions) onUpdateNodeDimensions(node.id, newW, newH);
     setResizingId(null);
@@ -193,6 +229,32 @@ export default function FlowchartCanvas({
   };
 
   // Calculate coordinates to draw line with arrows nicely avoiding overlapping
+  
+  const generateOrthogonalPath = (start: {x: number, y: number}, end: {x: number, y: number}, isHorizontal: boolean) => {
+    const r = 16;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    
+    if (Math.abs(dx) < r * 2 || Math.abs(dy) < r * 2) {
+      if (isHorizontal) {
+        return `M ${start.x} ${start.y} L ${start.x + dx/2} ${start.y} L ${start.x + dx/2} ${end.y} L ${end.x} ${end.y}`;
+      } else {
+        return `M ${start.x} ${start.y} L ${start.x} ${start.y + dy/2} L ${end.x} ${start.y + dy/2} L ${end.x} ${end.y}`;
+      }
+    }
+
+    const dirX = Math.sign(dx);
+    const dirY = Math.sign(dy);
+
+    if (isHorizontal) {
+      const midX = start.x + dx / 2;
+      return `M ${start.x} ${start.y} L ${midX - r*dirX} ${start.y} Q ${midX} ${start.y} ${midX} ${start.y + r*dirY} L ${midX} ${end.y - r*dirY} Q ${midX} ${end.y} ${midX + r*dirX} ${end.y} L ${end.x} ${end.y}`;
+    } else {
+      const midY = start.y + dy / 2;
+      return `M ${start.x} ${start.y} L ${start.x} ${midY - r*dirY} Q ${start.x} ${midY} ${start.x + r*dirX} ${midY} L ${end.x - r*dirX} ${midY} Q ${end.x} ${midY} ${end.x} ${midY + r*dirY} L ${end.x} ${end.y}`;
+    }
+  };
+
   const calculateConnectionLine = (fromNode: FlowNode, toNode: FlowNode) => {
     const fromPorts = getNodePorts(fromNode);
     const toPorts = getNodePorts(toNode);
@@ -203,8 +265,10 @@ export default function FlowchartCanvas({
 
     let start = fromPorts.bottom;
     let end = toPorts.top;
+    let isHorizontal = false;
 
     if (Math.abs(dx) > Math.abs(dy)) {
+      isHorizontal = true;
       // Horizontal flow
       if (dx > 0) {
         start = fromPorts.right;
@@ -224,7 +288,7 @@ export default function FlowchartCanvas({
       }
     }
 
-    return { start, end };
+    return { start, end, isHorizontal };
   };
 
   // Preset node colors mapping for premium styling lookup
@@ -241,7 +305,47 @@ export default function FlowchartCanvas({
   const trackingDimOverlay = !isEditMode && !isIncidentActive;
 
   return (
-    <div id="canvas-scroll-container" className="flex-1 overflow-auto bg-white rounded-2xl border border-slate-200 shadow-sm relative min-h-[500px]">
+    <div id="canvas-scroll-container" ref={scrollContainerRef} className={`flex-1 overflow-auto ${isPanning ? "cursor-grabbing" : ""} bg-white rounded-2xl border border-slate-200 shadow-sm relative min-h-[500px]`}
+  onPointerDown={e => {
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey)) {
+      e.stopPropagation();
+      e.preventDefault();
+      setIsPanning(true);
+      panningStartPos.current = { x: e.clientX, y: e.clientY };
+      panningScrollStart.current = { x: scrollContainerRef.current?.scrollLeft || 0, y: scrollContainerRef.current?.scrollTop || 0 };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  }}
+  onPointerMove={e => {
+    if (isPanning && scrollContainerRef.current) {
+      e.stopPropagation();
+      e.preventDefault();
+      const dx = e.clientX - panningStartPos.current.x;
+      const dy = e.clientY - panningStartPos.current.y;
+      scrollContainerRef.current.scrollLeft = panningScrollStart.current.x - dx;
+      scrollContainerRef.current.scrollTop = panningScrollStart.current.y - dy;
+    }
+  }}
+  onPointerUp={e => {
+    if (isPanning) {
+      e.stopPropagation();
+      e.preventDefault();
+      setIsPanning(false);
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }}
+  onContextMenu={e => {
+    if (e.button === 2) {
+       e.preventDefault(); // allow right mouse pan
+    }
+  }}
+  >
+      <div className="absolute top-4 right-4 z-40 flex gap-2 bg-white/90 backdrop-blur shadow-sm p-1.5 rounded-xl border border-slate-200">
+        <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 cursor-pointer" title="Zoom Out"><Icons.ZoomOut className="w-4 h-4" /></button>
+        <span className="text-xs font-medium w-9 text-center my-auto text-slate-500">{Math.round(zoom * 100)}%</span>
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 cursor-pointer" title="Zoom In"><Icons.ZoomIn className="w-4 h-4" /></button>
+      </div>
+      <div style={{ width: GRID_COLS * CELL_WIDTH * zoom, height: GRID_ROWS * CELL_HEIGHT * zoom, position: "relative", minWidth: "100%", minHeight: "100%" }}>
       
       {/* Dim overlay showing before start is pressed under Tracking Mode */}
       {trackingDimOverlay && (
@@ -263,12 +367,71 @@ export default function FlowchartCanvas({
         className={`w-[2160px] h-[1120px] ${isEditMode ? 'bento-dot-grid' : ''} bg-slate-50/50 relative select-none transition-colors duration-500`}
         style={{
           width: `${GRID_COLS * CELL_WIDTH}px`,
+          transform: `scale(${zoom})`,
+          transformOrigin: "top left",
           height: `${GRID_ROWS * CELL_HEIGHT}px`,
         }}
-        onClick={() => onSelectNode(null)}
+        onPointerDown={(e) => {
+          if (!isEditMode) { onSelectNode(null); return; }
+          if (e.target === containerRef.current) {
+            const rect = containerRef.current!.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / zoom;
+            const y = (e.clientY - rect.top) / zoom;
+            setMarqueeStart({ x, y });
+            setMarqueeCurrent({ x, y });
+            e.currentTarget.setPointerCapture(e.pointerId);
+            if (!e.shiftKey) { setSelectedIds(new Set()); onSelectNode(null); }
+          }
+        }}
+        onPointerMove={(e) => {
+          if (marqueeStart) {
+            const rect = containerRef.current!.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / zoom;
+            const y = (e.clientY - rect.top) / zoom;
+            setMarqueeCurrent({ x, y });
+          }
+        }}
+        onPointerUp={(e) => {
+          if (marqueeStart && marqueeCurrent) {
+            // Find nodes inside marquee
+            const rectX = Math.min(marqueeStart.x, marqueeCurrent.x);
+            const rectY = Math.min(marqueeStart.y, marqueeCurrent.y);
+            const rectW = Math.abs(marqueeCurrent.x - marqueeStart.x);
+            const rectH = Math.abs(marqueeCurrent.y - marqueeStart.y);
+            
+            const newSelected = new Set(e.shiftKey ? selectedIds : []);
+            nodes.forEach(n => {
+              const nx = n.x * CELL_WIDTH;
+              const ny = n.y * CELL_HEIGHT;
+              const nw = n.width * CELL_WIDTH;
+              const nh = n.height * CELL_HEIGHT;
+              // Simple intersection
+              if (nx < rectX + rectW && nx + nw > rectX && ny < rectY + rectH && ny + nh > rectY) {
+                newSelected.add(n.id);
+              }
+            });
+            setSelectedIds(newSelected);
+            if (newSelected.size > 0) onSelectNode((Array.from(newSelected) as string[])[newSelected.size - 1]);
+            
+            setMarqueeStart(null);
+            setMarqueeCurrent(null);
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }
+        }}
       >
         {/* Dynamic connection paths lines layer */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
+        {marqueeStart && marqueeCurrent && (
+        <div 
+           className="absolute border-2 border-blue-500 bg-blue-500/20 z-40 pointer-events-none"
+           style={{
+             left: `${Math.min(marqueeStart.x, marqueeCurrent.x)}px`,
+             top: `${Math.min(marqueeStart.y, marqueeCurrent.y)}px`,
+             width: `${Math.abs(marqueeCurrent.x - marqueeStart.x)}px`,
+             height: `${Math.abs(marqueeCurrent.y - marqueeStart.y)}px`,
+           }}
+        />
+      )}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
           <defs>
             <marker
               id="arrowhead"
@@ -297,19 +460,21 @@ export default function FlowchartCanvas({
             const toNode = nodes.find((n) => n.id === conn.toId);
             if (!fromNode || !toNode) return null;
 
-            const { start, end } = calculateConnectionLine(fromNode, toNode);
+            const { start, end, isHorizontal } = calculateConnectionLine(fromNode, toNode);
             const isSelected = selectedNodeId === fromNode.id || selectedNodeId === toNode.id;
+
+            let pathD = generateOrthogonalPath(start, end, isHorizontal);
 
             return (
               <React.Fragment key={conn.id}>
                 {/* Visual Connection line */}
-                <line
-                  x1={start.x}
-                  y1={start.y}
-                  x2={end.x}
-                  y2={end.y}
+                <path
+                  d={pathD}
+                  fill="none"
                   stroke={isSelected ? '#10b981' : '#64748b'}
                   strokeWidth={isSelected ? '2.5' : '1.5'}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
                   strokeDasharray={fromNode.type === 'annotation' || conn.isDashed ? '4,4' : 'none'}
                   markerEnd={isSelected ? 'url(#arrowhead-selected)' : 'url(#arrowhead)'}
                   opacity="0.85"
@@ -354,22 +519,23 @@ export default function FlowchartCanvas({
           .sort((a, b) => (a.type === 'panel' ? -1 : b.type === 'panel' ? 1 : 0))
           .map((node) => {
           const isDragging = draggingId === node.id;
-          const leftPx = isDragging ? dragPos.x : node.x * CELL_WIDTH + 10;
-          const topPx = isDragging ? dragPos.y : node.y * CELL_HEIGHT + 8;
+          const isMultiDragging = draggingId !== null && selectedIds.has(node.id);
+          const leftPx = isMultiDragging ? (dragNodesInitialPos.get(node.id)?.x! + dragPos.x) * CELL_WIDTH + 10 : node.x * CELL_WIDTH + 10;
+          const topPx = isMultiDragging ? (dragNodesInitialPos.get(node.id)?.y! + dragPos.y) * CELL_HEIGHT + 8 : node.y * CELL_HEIGHT + 8;
           const isResizing = resizingId === node.id;
           let activeWidth = node.width;
           let activeHeight = node.height;
           if (isResizing) {
-             const deltaX = resizeCurrentPos.x - resizeStartPos.x;
-             const deltaY = resizeCurrentPos.y - resizeStartPos.y;
-             activeWidth = Math.max(1, Math.min(24, resizeStartDims.width + Math.round(deltaX / CELL_WIDTH)));
-             activeHeight = Math.max(1, Math.min(24, resizeStartDims.height + Math.round(deltaY / CELL_HEIGHT)));
+             const deltaX = (resizeCurrentPos.x - resizeStartPos.x) / zoom;
+             const deltaY = (resizeCurrentPos.y - resizeStartPos.y) / zoom;
+             activeWidth = Math.max(0.5, Math.min(24, resizeStartDims.width + Math.round((deltaX / CELL_WIDTH) * 4) / 4));
+             activeHeight = Math.max(0.5, Math.min(24, resizeStartDims.height + Math.round((deltaY / CELL_HEIGHT) * 4) / 4));
           }
 
           const widthPx = activeWidth * CELL_WIDTH - 20;
           const heightPx = activeHeight * CELL_HEIGHT - 16;
           
-          const isSelected = selectedNodeId === node.id;
+          const isSelected = selectedIds.has(node.id);
           const isOrigin = linkOriginId === node.id;
           const isLinkTarget = linkOriginId !== null && linkOriginId !== node.id;
           const isToggleActive = !!activeToggles[node.id];
@@ -731,13 +897,13 @@ export default function FlowchartCanvas({
               )}
 
               {/* Main Centered Content */}
-              <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
-                <DynamicIcon name={node.icon} className="w-6 h-6 mb-1.5 opacity-90" />
-                <h4 className={`font-display leading-tight text-center text-ellipsis overflow-hidden w-full px-1 text-balance ${buttonFontSizeClass} ${buttonFontWeightClass}`}>
+              <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none p-1">
+                <DynamicIcon name={node.icon} className={`${activeHeight <= 0.75 ? 'hidden' : 'w-4 h-4'} mb-0.5 opacity-90 shrink-0`} />
+                <h4 className={`font-display leading-tight text-center text-ellipsis overflow-hidden w-full text-balance ${buttonFontSizeClass} ${buttonFontWeightClass}`}>
                   {node.label || "Action Button"}
                 </h4>
-                {node.notes && (
-                  <span className="text-[10px] mt-1.5 font-medium opacity-80 italic text-center w-full px-2 line-clamp-2 leading-snug">
+                {node.notes && activeHeight > 1 && (
+                  <span className="text-[10px] sm:text-[9px] mt-0.5 font-medium opacity-80 italic text-center w-full line-clamp-2 leading-snug">
                     {node.notes}
                   </span>
                 )}
@@ -746,6 +912,7 @@ export default function FlowchartCanvas({
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

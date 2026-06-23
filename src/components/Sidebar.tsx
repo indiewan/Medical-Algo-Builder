@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as Icons from 'lucide-react';
 import { FlowNode, MedicalAlgorithm, FlowConnection } from '../types.ts';
 
@@ -104,8 +104,40 @@ export default function Sidebar({
     setCustomAlgoName('');
   };
 
+  const [isOpen, setIsOpen] = useState(false); // Default to start collapsed on mobile/tablets if possible, but let's default to false except on very large screens? Or true
+
+  useEffect(() => {
+     // Auto close on small screens on initial load
+     if (window.innerWidth < 1024) {
+       setIsOpen(false);
+     } else {
+       setIsOpen(true);
+     }
+  }, []);
+
+  if (!isOpen) {
+    return (
+      <aside className="absolute right-4 bottom-4 lg:relative lg:bottom-auto lg:right-auto z-50 shrink-0">
+        <button 
+          onClick={() => setIsOpen(true)} 
+          className="bg-white p-3 rounded-full lg:rounded-xl border border-slate-200 shadow-md hover:bg-slate-50 text-slate-700 transition"
+          title="Open settings sidebar"
+        >
+          <Icons.Settings className="w-6 h-6 lg:w-5 lg:h-5 text-blue-600 lg:text-slate-700" />
+        </button>
+      </aside>
+    );
+  }
+
   return (
-    <aside id="app_sidebar" className="w-full lg:w-[380px] bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden no-print">
+    <aside id="app_sidebar" className="absolute bottom-0 left-0 right-0 h-[60vh] lg:relative lg:h-full w-full lg:w-[380px] bg-white lg:rounded-2xl border-t lg:border border-slate-200 shadow-2xl lg:shadow-sm flex flex-col overflow-hidden no-print z-50 shrink-0">
+      <button 
+        onClick={() => setIsOpen(false)}
+        className="absolute top-2 right-2 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg z-50 transition-colors"
+        title="Hide Sidebar"
+      >
+        <Icons.X className="w-4 h-4" />
+      </button>
       
       {/* Tab Navigation header */}
       {!isSharedResource && (
@@ -645,7 +677,7 @@ export default function Sidebar({
                     <label htmlFor="node_width_edit" className="block text-[10px] font-bold text-slate-400 uppercase">Width Blocks</label>
                     <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => onUpdateSelectedNode({ width: Math.max(1, selectedNode.width - 1) })}
+                        onClick={() => onUpdateSelectedNode({ width: Math.max(0.5, selectedNode.width - 0.25) })}
                         className="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-xs text-slate-700 font-bold"
                         id="width_dec_btn"
                       >
@@ -653,7 +685,7 @@ export default function Sidebar({
                       </button>
                       <span id="width_value_label" className="text-xs font-semibold text-slate-800">{selectedNode.width}</span>
                       <button
-                        onClick={() => onUpdateSelectedNode({ width: Math.min(24, selectedNode.width + 1) })}
+                        onClick={() => onUpdateSelectedNode({ width: Math.min(24, selectedNode.width + 0.25) })}
                         className="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-xs text-slate-700 font-bold"
                         id="width_inc_btn"
                       >
@@ -666,7 +698,7 @@ export default function Sidebar({
                     <label htmlFor="node_height_edit" className="block text-[10px] font-bold text-slate-400 uppercase">Height Blocks</label>
                     <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => onUpdateSelectedNode({ height: Math.max(1, selectedNode.height - 1) })}
+                        onClick={() => onUpdateSelectedNode({ height: Math.max(0.5, selectedNode.height - 0.25) })}
                         className="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-xs text-slate-700 font-bold"
                         id="height_dec_btn"
                       >
@@ -674,7 +706,7 @@ export default function Sidebar({
                       </button>
                       <span id="height_value_label" className="text-xs font-semibold text-slate-800">{selectedNode.height}</span>
                       <button
-                        onClick={() => onUpdateSelectedNode({ height: Math.min(24, selectedNode.height + 1) })}
+                        onClick={() => onUpdateSelectedNode({ height: Math.min(24, selectedNode.height + 0.25) })}
                         className="px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-xs text-slate-700 font-bold"
                         id="height_inc_btn"
                       >
