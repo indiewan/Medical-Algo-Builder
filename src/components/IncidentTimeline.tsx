@@ -3,8 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Clock, Printer, RotateCcw, Share2, ClipboardList, CheckCircle2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Clock, Printer, RotateCcw, Share2, ClipboardList, CheckCircle2, Loader2 } from 'lucide-react';
 import { IncidentSession, LogEntry } from '../types.ts';
+
+import { toCanvas } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 
 interface IncidentTimelineProps {
   session: IncidentSession;
@@ -19,6 +23,8 @@ export default function IncidentTimeline({
   onCopyReport,
   isCopied,
 }: IncidentTimelineProps) {
+  const [isExporting, setIsExporting] = useState(false);
+
   const formatTime = (epochMs: number) => {
     return new Date(epochMs).toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -36,8 +42,55 @@ export default function IncidentTimeline({
     return `${mm}:${ss}`;
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleExportPDF = async () => {
+    if (isExporting) return;
+    
+    const element = document.getElementById('printable_medical_document');
+    if (!element) {
+      window.print();
+      return;
+    }
+    
+    try {
+      setIsExporting(true);
+      
+      const canvas = await toCanvas(element, {
+        pixelRatio: 2,
+        backgroundColor: '#ffffff'
+      });
+      
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      let heightLeft = pdfHeight;
+      let position = 0;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      pdf.save(`incident_timeline_${session.id.slice(0, 8)}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF', error);
+      window.print(); // fallback
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleExportCSV = () => {
@@ -118,12 +171,13 @@ export default function IncidentTimeline({
               </a>
             )}
             <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-medium transition cursor-pointer"
+              onClick={handleExportPDF}
+              disabled={isExporting}
+              className={`flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition cursor-pointer ${isExporting ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500'}`}
               id="report_print_btn"
             >
-              <Printer className="w-4 h-4" />
-              Export PDF / Print
+              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+              {isExporting ? 'Generating PDF...' : 'Export PDF / Print'}
             </button>
           </div>
         </div>
