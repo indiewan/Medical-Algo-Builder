@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as Icons from 'lucide-react';
 import { toPng } from 'html-to-image';
 
@@ -20,40 +20,162 @@ export default function App() {
   // Loaded algorithms: local user saved list + templates
   const [userSavedAlgos, setUserSavedAlgos] = useState<MedicalAlgorithm[]>([]);
   const [currentAlgo, setCurrentAlgo] = useState<MedicalAlgorithm>(MEDICAL_TEMPLATES[0]);
-  
+  const [past, setPast] = useState<MedicalAlgorithm[]>([]);
+  const [future, setFuture] = useState<MedicalAlgorithm[]>([]);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
+  const [showIpadInstallModal, setShowIpadInstallModal] = useState(false);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    const handleShowModal = () => setShowIpadInstallModal(true);
+    window.addEventListener('show-ipad-install-modal', handleShowModal);
+    return () => window.removeEventListener('show-ipad-install-modal', handleShowModal);
+  }, []);
+
+  const updateAlgoWithHistory = (updateFn: MedicalAlgorithm | ((prev: MedicalAlgorithm) => MedicalAlgorithm)) => {
+    setCurrentAlgo((prev) => {
+      const nextAlgo = typeof updateFn === 'function' ? updateFn(prev) : updateFn;
+      // Simple debounce/throttle could be done, but we assume most actions are atomic
+      setPast((p) => [...p, prev]);
+      setFuture([]);
+      return nextAlgo;
+    });
+  };
+
+  const handleUndo = () => {
+    if (past.length === 0) return;
+    const previous = past[past.length - 1];
+    setPast(past.slice(0, past.length - 1));
+    setFuture([currentAlgo, ...future]);
+    setCurrentAlgo(previous);
+  };
+
+  const handleRedo = () => {
+    if (future.length === 0) return;
+    const next = future[0];
+    setFuture(future.slice(1));
+    setPast([...past, currentAlgo]);
+    setCurrentAlgo(next);
+  };
+
   // App Modes State
   const [isEditMode, setIsEditMode] = useState(true);
   const [isSharedResource, setIsSharedResource] = useState(false);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const selectedNodeId = selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null;
+  const setSelectedNodeId = (id: string | string[] | null) => {
+     if (id === null) setSelectedNodeIds([]);
+     else if (typeof id === 'string') setSelectedNodeIds([id]);
+     else setSelectedNodeIds(id);
+  };
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Connection states (for visual link drawers)
   const [linkOriginId, setLinkOriginId] = useState<string | null>(null);
 
   // Active Incident Tracking states
   const [isIncidentActive, setIsIncidentActive] = useState(false);
-  const [incidentSession, setIncidentSession] = useState<IncidentSession | null>(null);
   const [isMuted, setIsMuted] = useState(false);
-
-  // Post-Incident briefing timeline show state (Show timeline report)
-  const [showTimelineReport, setShowTimelineReport] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [incidentSession, setIncidentSession] = useState<IncidentSession | null>(null);
+  const [showTimelineReport, setShowTimelineReport] = useState(false);
+  
+  // Interaction memory joggers for tracking mode
+  const [promptState, setPromptState] = useState<{ isOpen: boolean; question: string; presetAnswers: string[]; nodeRef: string } | null>(null);
 
-  // Prompt Modal query state
-  const [promptState, setPromptState] = useState<{
-    isOpen: boolean;
-    nodeId: string;
-    nodeLabel: string;
-    question: string;
-    presetAnswers: string[];
-  } | null>(null);
-
-  // Active individual node timer tracks (e.g., adrenal cyclical triggers MM:SS counters)
+  // Node specific active tracking states
   const [pressTimestamps, setPressTimestamps] = useState<{ [nodeId: string]: number }>({});
-  const [activeTimers, setActiveTimers] = useState<{ [nodeId: string]: { lastPressedAt: number; counter: string } }>({});
+  const [activeTimers, setActiveTimers] = useState<{ [nodeId: string]: { lastPressedAt: number; counter: string; isExpired?: boolean } }>({});
   const [activeToggles, setActiveToggles] = useState<Record<string, boolean>>({});
 
   // Loaded shared banner state
   const [sharedBannerMessage, setSharedBannerMessage] = useState<string | null>(null);
+
+  // Copy / Paste / Delete via Keyboard
+  const [clipboardNodes, setClipboardNodes] = useState<FlowNode[]>([]);
+  const [clipboardConnections, setClipboardConnections] = useState<FlowConnection[]>([]);
+
+  useEffect(() => {
+    if (!isEditMode || isSharedResource) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input or textarea
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+         return;
+      }
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.length > 0) {
+         updateAlgoWithHistory(prev => ({
+            ...prev,
+            nodes: prev.nodes.filter(n => !selectedNodeIds.includes(n.id)),
+            connections: prev.connections.filter(c => !selectedNodeIds.includes(c.fromId) && !selectedNodeIds.includes(c.toId))
+         }));
+         setSelectedNodeId(null);
+      }
+
+      if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+         if (selectedNodeIds.length > 0) {
+            const nodesToCopy = currentAlgo.nodes.filter(n => selectedNodeIds.includes(n.id));
+            setClipboardNodes(nodesToCopy);
+            
+            // Also copy connections between these nodes
+            const connsToCopy = currentAlgo.connections.filter(c => selectedNodeIds.includes(c.fromId) && selectedNodeIds.includes(c.toId));
+            setClipboardConnections(connsToCopy);
+         }
+      }
+
+      if (e.key === 'v' && (e.ctrlKey || e.metaKey)) {
+         if (clipboardNodes.length > 0) {
+            // Find centroid to offset by grid cells safely
+            const minX = Math.min(...clipboardNodes.map(n => n.x));
+            const minY = Math.min(...clipboardNodes.map(n => n.y));
+            
+            // Offset logic (move down right by 1 cell, wrap if out of bounds)
+            const idMap = new Map<string, string>();
+            const newNodes = clipboardNodes.map(n => {
+               const newId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+               idMap.set(n.id, newId);
+               return {
+                  ...n,
+                  id: newId,
+                  x: n.x + 1,
+                  y: n.y + 1,
+               };
+            });
+            
+            const newConnections = clipboardConnections
+              .filter(c => idMap.has(c.fromId) && idMap.has(c.toId))
+              .map(c => ({
+                 ...c,
+                 id: `conn_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                 fromId: idMap.get(c.fromId)!,
+                 toId: idMap.get(c.toId)!
+              }));
+
+            updateAlgoWithHistory(prev => ({
+               ...prev,
+               nodes: [...prev.nodes, ...newNodes],
+               connections: [...prev.connections, ...newConnections]
+            }));
+
+            setSelectedNodeId(newNodes.map(n => n.id));
+         }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isEditMode, isSharedResource, selectedNodeIds, currentAlgo, clipboardNodes, clipboardConnections]);
 
   // Load configuration and parse share links
   useEffect(() => {
@@ -62,12 +184,12 @@ export default function App() {
     if (local) {
       try {
         setUserSavedAlgos(JSON.parse(local));
-      } catch (err) {
-        console.error('Failed to parse user clinical library', err);
+      } catch (e) {
+        console.error('Failed to parse local algos');
       }
     }
 
-    // 2. Parse shared URL algorithm
+    // 2. Check URL for shared links
     const params = new URLSearchParams(window.location.search);
     const sharedCode = params.get('algo_share');
     if (sharedCode) {
@@ -82,41 +204,54 @@ export default function App() {
   }, []);
 
   // Sync user saved list with browser LocalStorage
-  const saveAlgorithmsToLocalStorage = (updated: MedicalAlgorithm[]) => {
-    setUserSavedAlgos(updated);
-    localStorage.setItem('medical_algos_user', JSON.stringify(updated));
+  const saveAlgorithmsToLocalStorage = (algos: MedicalAlgorithm[]) => {
+    localStorage.setItem('medical_algos_user', JSON.stringify(algos));
+    setUserSavedAlgos(algos);
   };
 
-  // Keep individual counters beating on intervals (once every 1 sec) when track session is active
+  // Node specific active timer clock loop
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
-    
+
     if (isIncidentActive) {
       interval = setInterval(() => {
         const now = Date.now();
-        const nextTimers: { [nodeId: string]: { lastPressedAt: number; counter: string } } = {};
+        const updatedTimers: { [key: string]: { lastPressedAt: number; counter: string; isExpired?: boolean } } = {};
         
-        Object.entries(pressTimestamps).forEach(([nodeId, ts]) => {
-          const tsNum = ts as number;
-          const diffInSec = Math.floor((now - tsNum) / 1000);
-          const mm = String(Math.floor(diffInSec / 60)).padStart(2, '0');
-          const ss = String(diffInSec % 60).padStart(2, '0');
-          nextTimers[nodeId] = {
-            lastPressedAt: tsNum,
-            counter: `${mm}:${ss}`
+        Object.entries(pressTimestamps).forEach(([nodeId, timestamp]) => {
+          const node = currentAlgo.nodes.find(n => n.id === nodeId);
+          const diffSeconds = Math.floor((now - Number(timestamp)) / 1000);
+          let counterStr = "";
+          let isExpired = false;
+
+          if (node?.type === 'timer' && node.timerDurationSec && node.timerDurationSec > 0) {
+            let remaining = node.timerDurationSec - diffSeconds;
+            if (remaining < 0) remaining = 0;
+            if (remaining === 0) isExpired = true;
+            const m = Math.floor(remaining / 60);
+            const s = remaining % 60;
+            counterStr = `${m}:${s.toString().padStart(2, '0')}`;
+          } else {
+            const m = Math.floor(diffSeconds / 60);
+            const s = diffSeconds % 60;
+            counterStr = `${m}:${s.toString().padStart(2, '0')}`;
+          }
+
+          updatedTimers[nodeId] = {
+            lastPressedAt: Number(timestamp),
+            counter: counterStr,
+            isExpired
           };
         });
-        
-        setActiveTimers(nextTimers);
+
+        setActiveTimers(updatedTimers);
       }, 1000);
-    } else {
-      setActiveTimers({});
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isIncidentActive, pressTimestamps]);
+  }, [isIncidentActive, pressTimestamps, currentAlgo.nodes]);
 
   // Master total clock timer updater for incident logs tracker
   const [masterTimerTicks, setMasterTimerTicks] = useState(0);
@@ -141,72 +276,69 @@ export default function App() {
     return `${mm}:${ss}`;
   };
 
-  // Node adding logic handler
-  const handleAddNode = (type: 'button' | 'annotation' | 'panel' | 'input' | 'table') => {
-    let newY = 0;
-    if (currentAlgo.nodes.length > 0) {
-      newY = Math.max(...currentAlgo.nodes.map((n) => n.y)) + 2;
-    }
-    // Stay within max boundaries
-    if (newY > 20) newY = 20;
+// Node adding logic handler
 
-    const defaultTitle = 
-      type === 'button' ? 'Action / Step' : 
-      type === 'annotation' ? 'Note / Info' : 
-      type === 'panel' ? 'STAGE 1' : 
-      type === 'input' ? 'Patient Value' : 
-      'Data Table';
-
-    const defaultWidth = 
-      type === 'panel' ? 8 : 
-      type === 'table' ? 6 : 
-      type === 'button' || type === 'input' ? 2.5 : 
-      4;
-
-    const defaultHeight = 
-      type === 'panel' ? 6 : 
-      type === 'table' ? 4 : 
-      type === 'button' ? 1 : 
-      type === 'input' ? 1 : 
-      1.5;
-
-    const defaultColor = type === 'panel' ? 'emerald' : type === 'input' ? 'slate' : type === 'table' ? 'slate' : 'slate';
+  const handleAddNode = (type: FlowNode['type']) => {
+    let label = 'Details';
+    let width = 5;
+    let height = 3;
+    let color: FlowNode['color'] = 'slate';
+    let icon = 'Activity';
+    
+    if (type === 'button') { label = 'New Button'; color = 'emerald'; icon = 'Play'; }
+    if (type === 'input') { label = 'New Input'; icon = 'PenLine'; }
+    if (type === 'table') { label = 'New Table'; width = 12; height = 6; icon = 'Table2'; }
+    if (type === 'annotation') { label = 'Annotation'; width = 8; height = 2; icon = 'StickyNote'; }
+    if (type === 'panel') { label = 'Panel'; icon = 'Square'; }
+    if (type === 'checklist') { label = 'Checklist'; width = 8; height = 5; icon = 'ListChecks'; color = 'slate'; }
+    if (type === 'vitals') { label = 'Vitals Tracker'; width = 8; height = 4; icon = 'HeartPulse'; color = 'blue'; }
+    if (type === 'medication') { label = 'Medication'; width = 7; height = 4; icon = 'Syringe'; color = 'rose'; }
+    if (type === 'timer') { label = 'Timer / Stopwatch'; width = 6; height = 4; icon = 'Timer'; color = 'amber'; }
 
     const newNode: FlowNode = {
       id: `node_${Date.now()}`,
       type,
-      label: defaultTitle,
-      icon: type === 'button' ? 'Activity' : type === 'input' ? 'PenLine' : type === 'table' ? 'Table' : 'AlertCircle',
-      x: type === 'panel' ? 0 : 2,
-      y: newY,
-      width: defaultWidth,
-      height: defaultHeight,
+      label,
+      icon,
       notes: '',
-      vocalConfirmation: type === 'button',
-      vocalMessage: type === 'button' ? `${defaultTitle} action logged.` : '',
+      vocalConfirmation: false,
+      vocalMessage: '',
       hasPrompt: false,
       promptQuestion: '',
       promptPresetAnswers: [],
-      color: defaultColor,
-      panelOpacity: type === 'panel' ? 20 : undefined,
+      x: 5,
+      y: 5,
+      width,
+      height,
+      color,
       inputType: type === 'input' ? 'text' : undefined,
       tableHeaders: type === 'table' ? ['Action', 'Time'] : undefined,
       tableRows: type === 'table' ? [['', ''], ['', '']] : undefined,
+      checklistItems: type === 'checklist' ? [
+        { id: `chk_${Date.now()}_1`, text: 'Check airway' },
+        { id: `chk_${Date.now()}_2`, text: 'Confirm IV access' }
+      ] : undefined,
+      vitalsFields: type === 'vitals' ? {
+        showHR: true, showBP: true, showSpO2: true, showRR: true, showTemp: false
+      } : undefined,
+      medicationOptions: type === 'medication' ? [
+        'Epinephrine 1mg IV', 'Amiodarone 300mg IV'
+      ] : undefined,
+      timerDurationSec: type === 'timer' ? 120 : undefined,
     };
 
-    setCurrentAlgo((prev) => {
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
         nodes: [...prev.nodes, newNode],
       };
     });
-    setSelectedNodeId(newNode.id);
+    setSelectedNodeId([newNode.id]);
   };
 
-  // Node coordinates drag aligner
   const handleUpdateNodeCoordinates = (idOrUpdates: string | {id: string, x: number, y: number}[], x?: number, y?: number) => {
-    setCurrentAlgo((prev) => {
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -223,7 +355,7 @@ export default function App() {
   };
 
   const handleUpdateNodeDimensions = (id: string, width: number, height: number) => {
-    setCurrentAlgo((prev) => {
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -232,10 +364,9 @@ export default function App() {
     });
   };
 
-  // Selected parameters tag updating
   const handleUpdateSelectedNode = (updated: Partial<FlowNode>) => {
     if (!selectedNodeId) return;
-    setCurrentAlgo((prev) => {
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -244,90 +375,95 @@ export default function App() {
     });
   };
 
-  // Node deletion from canvas
   const handleDeleteSelectedNode = () => {
-    if (!selectedNodeId) return;
-    setCurrentAlgo((prev) => {
+    if (selectedNodeIds.length === 0) return;
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        nodes: prev.nodes.filter((n) => n.id !== selectedNodeId),
+        nodes: prev.nodes.filter((n) => !selectedNodeIds.includes(n.id)),
         connections: prev.connections.filter(
-          (c) => c.fromId !== selectedNodeId && c.toId !== selectedNodeId
+          (c) => !selectedNodeIds.includes(c.fromId) && !selectedNodeIds.includes(c.toId)
         ),
       };
     });
     setSelectedNodeId(null);
   };
 
-  // Node duplication from canvas
   const handleDuplicateSelectedNode = () => {
-    if (!selectedNodeId) return;
+    if (selectedNodeIds.length === 0) return;
     
-    const nodeToCopy = currentAlgo.nodes.find(n => n.id === selectedNodeId);
-    if (!nodeToCopy) return;
+    const nodesToCopy = currentAlgo.nodes.filter(n => selectedNodeIds.includes(n.id));
+    if (nodesToCopy.length === 0) return;
 
-    // determine duplicate spawn coordinates
-    let newY = nodeToCopy.y + 2;
-    if (newY > 12) newY = 12;
+    const idMap = new Map<string, string>();
+    const newNodes = nodesToCopy.map(n => {
+       const newId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+       idMap.set(n.id, newId);
+       return {
+          ...n,
+          id: newId,
+          x: n.x + 1,
+          y: n.y + 1,
+       };
+    });
 
-    const newNode: FlowNode = {
-      ...nodeToCopy,
-      id: `node_${Date.now()}`,
-      x: nodeToCopy.x,
-      y: newY,
-    };
+    const connsToCopy = currentAlgo.connections.filter(c => selectedNodeIds.includes(c.fromId) && selectedNodeIds.includes(c.toId));
+    const newConnections = connsToCopy
+      .filter(c => idMap.has(c.fromId) && idMap.has(c.toId))
+      .map(c => ({
+         ...c,
+         id: `conn_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+         fromId: idMap.get(c.fromId)!,
+         toId: idMap.get(c.toId)!
+      }));
 
-    setCurrentAlgo((prev) => {
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        nodes: [...prev.nodes, newNode],
+        nodes: [...prev.nodes, ...newNodes],
+        connections: [...prev.connections, ...newConnections]
       };
     });
-    setSelectedNodeId(newNode.id);
+    setSelectedNodeId(newNodes.map(n => n.id));
   };
 
-  // Start linkage line creation tool
   const handleStartTrackingModeLink = (id: string) => {
     setLinkOriginId(id);
   };
 
-  // Complete connect action line arrow
   const handleCompleteLink = (targetId: string) => {
     if (!linkOriginId || linkOriginId === targetId) {
       setLinkOriginId(null);
       return;
     }
 
-    setCurrentAlgo((prev) => {
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       
       const exists = prev.connections.some(
         (c) => c.fromId === linkOriginId && c.toId === targetId
       );
+      if (exists) return prev; // Avoid duplicate connections
 
-      if (!exists) {
-        const newConn: FlowConnection = {
-          id: `conn_${Date.now()}`,
-          fromId: linkOriginId,
-          toId: targetId,
-        };
-        return {
-          ...prev,
-          connections: [...prev.connections, newConn],
-        };
-      }
-      
-      return prev;
+      const newConn: FlowConnection = {
+        id: `conn_${Date.now()}`,
+        fromId: linkOriginId,
+        toId: targetId,
+      };
+
+      return {
+        ...prev,
+        connections: [...prev.connections, newConn],
+      };
     });
-
+    
     setLinkOriginId(null);
   };
 
-  // Drop connection line handle arrow
   const handleDeleteConnection = (connId: string) => {
-    setCurrentAlgo((prev) => {
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -337,7 +473,7 @@ export default function App() {
   };
 
   const handleUpdateConnection = (connId: string, updates: Partial<FlowConnection>) => {
-    setCurrentAlgo((prev) => {
+    updateAlgoWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -351,6 +487,8 @@ export default function App() {
   // Load a medical algorithm scenario template
   const handleLoadTemplate = (algo: MedicalAlgorithm) => {
     setCurrentAlgo(JSON.parse(JSON.stringify(algo)));
+    setPast([]);
+    setFuture([]);
     setSelectedNodeId(null);
     setLinkOriginId(null);
   };
@@ -369,15 +507,62 @@ export default function App() {
 
   // Delete saved scenario option from local list
   const handleDeleteFromLibrary = (id: string) => {
-    if (confirm('Permanently delete this clinical checklist protocol from offline storage?')) {
-      const nextSaved = userSavedAlgos.filter((a) => a.id !== id);
-      saveAlgorithmsToLocalStorage(nextSaved);
-    }
+    const nextSaved = userSavedAlgos.filter((a) => a.id !== id);
+    saveAlgorithmsToLocalStorage(nextSaved);
+  };
+
+  // Rename saved scenario
+  const handleRenameFromLibrary = (id: string, newName: string) => {
+    const nextSaved = userSavedAlgos.map((a) => a.id === id ? { ...a, name: newName } : a);
+    saveAlgorithmsToLocalStorage(nextSaved);
   };
 
   // Native URL compression share builder
   const handlePublishShare = () => {
     return getShareQueryLink(currentAlgo);
+  };
+
+  // Export library to JSON file
+  const handleExportLibrary = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(userSavedAlgos, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `clinical_protocols_backup_${new Date().toISOString().slice(0,10)}.json`);
+    document.body.appendChild(downloadAnchorNode); // required for firefox
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  // Import library from JSON file
+  const handleImportLibrary = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target?.result as string);
+        if (Array.isArray(parsed)) {
+          const merged = [...userSavedAlgos];
+          let importedCount = 0;
+          parsed.forEach((importedAlgo: MedicalAlgorithm) => {
+             if (importedAlgo.id && importedAlgo.name && Array.isArray(importedAlgo.nodes)) {
+                 importedAlgo.id = `imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                 merged.push(importedAlgo);
+                 importedCount++;
+             }
+          });
+          saveAlgorithmsToLocalStorage(merged);
+          alert(`Successfully imported ${importedCount} protocols.`);
+        } else {
+          alert('Invalid file format. Must be a JSON array of protocols.');
+        }
+      } catch (err) {
+        alert('Failed to parse file. Ensure it is a valid JSON export.');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
   };
 
   // --- PLAY/TRACKING SIMULATION RUN WORKFLOW ---
@@ -670,6 +855,9 @@ export default function App() {
     setIncidentSession(finalSession);
     setIsIncidentActive(false);
     setShowTimelineReport(true); // Jump directly to timeline review view
+    setPressTimestamps({});
+    setActiveTimers({});
+    setActiveToggles({});
 
     speakVocalFeedback('Incident stopped. Timeline briefing generated.');
   };
@@ -746,7 +934,7 @@ export default function App() {
                 type="text"
                 value={currentAlgo.name}
                 id="algo_name_title_edit"
-                onChange={(e) => setCurrentAlgo((prev) => {
+                onChange={(e) => updateAlgoWithHistory((prev) => {
                   if (!prev) return prev;
                   return { ...prev, name: e.target.value };
                 })}
@@ -763,7 +951,7 @@ export default function App() {
                 type="text"
                 value={currentAlgo.description || ''}
                 id="algo_desc_edit"
-                onChange={(e) => setCurrentAlgo((prev) => {
+                onChange={(e) => updateAlgoWithHistory((prev) => {
                   if (!prev) return prev;
                   return { ...prev, description: e.target.value };
                 })}
@@ -777,6 +965,59 @@ export default function App() {
               </p>
             )}
           </div>
+        </div>
+
+        
+        {/* Search filter */}
+        <div className="relative flex items-center mr-1 md:mr-2 no-print">
+          <Icons.Search className="w-4 h-4 text-slate-400 absolute left-2.5" />
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 pr-7 py-1.5 text-sm rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-28 md:w-48 transition-all bg-slate-50"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200"
+            >
+              <Icons.X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+
+        {/* Undo/Redo & Dark Mode */}
+        <div className="flex items-center mr-1 md:mr-2 no-print gap-2">
+          {isEditMode && !isSharedResource && (
+            <div className="flex bg-slate-100 p-1 rounded-xl shrink-0 gap-0.5">
+              <button
+                onClick={handleUndo}
+                disabled={past.length === 0}
+                className={`p-1.5 rounded-lg flex items-center justify-center transition-colors ${past.length > 0 ? 'hover:bg-slate-200 text-slate-700' : 'text-slate-400 cursor-not-allowed'}`}
+                title="Undo"
+              >
+                <Icons.Undo2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={future.length === 0}
+                className={`p-1.5 rounded-lg flex items-center justify-center transition-colors ${future.length > 0 ? 'hover:bg-slate-200 text-slate-700' : 'text-slate-400 cursor-not-allowed'}`}
+                title="Redo"
+              >
+                <Icons.Redo2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-2 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors shrink-0"
+            title="Toggle Dark Mode"
+          >
+            {isDarkMode ? <Icons.Sun className="w-4 h-4" /> : <Icons.Moon className="w-4 h-4" />}
+          </button>
         </div>
 
         {/* Start / Stop tracking clinical incident modules */}
@@ -876,7 +1117,9 @@ export default function App() {
             isEditMode={isEditMode}
             isSharedResource={isSharedResource}
             isIncidentActive={isIncidentActive}
+            searchQuery={searchQuery}
             selectedNodeId={selectedNodeId}
+            selectedNodeIds={selectedNodeIds}
             linkOriginId={linkOriginId}
             onSelectNode={setSelectedNodeId}
             onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
@@ -913,8 +1156,11 @@ export default function App() {
             onLoadTemplate={handleLoadTemplate}
             onSaveToLibrary={handleSaveToLibrary}
             onDeleteFromLibrary={handleDeleteFromLibrary}
+            onRenameFromLibrary={handleRenameFromLibrary}
             onPublishShare={handlePublishShare}
             onCancelLog={handleCancelLog}
+            onExportLibrary={handleExportLibrary}
+            onImportLibrary={handleImportLibrary}
           />
 
         </div>
@@ -928,6 +1174,56 @@ export default function App() {
         onSubmit={handlePromptSubmit}
         onClose={() => setPromptState(null)}
       />
+
+      {/* iPad Home Screen Install Instructions Modal */}
+      {showIpadInstallModal && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200 relative">
+            <div className="bg-blue-600 p-6 text-white text-center">
+              <div className="w-16 h-16 bg-white/20 rounded-2xl mx-auto flex items-center justify-center mb-4 backdrop-blur-md">
+                <Icons.MonitorSmartphone className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-xl font-bold font-display">Install on iPad / iPhone</h3>
+              <p className="text-blue-100 text-sm mt-2 opacity-90">Add this protocol to your home screen for quick, offline-capable access.</p>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              <div className="flex gap-4 items-start">
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 font-bold text-slate-500 mt-0.5 text-sm">1</div>
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Open the Share Link in Safari</p>
+                  <p className="text-xs text-slate-500 mt-1">Make sure you are using Safari on your iPad or iPhone, not an in-app browser.</p>
+                </div>
+              </div>
+              
+              <div className="flex gap-4 items-start">
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 font-bold text-slate-500 mt-0.5 text-sm">2</div>
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Tap the Share button</p>
+                  <p className="text-xs text-slate-500 mt-1">Look for the square icon with an arrow pointing up <Icons.Share className="w-3 h-3 inline text-blue-500 mx-1" /> at the top or bottom of your screen.</p>
+                </div>
+              </div>
+              
+              <div className="flex gap-4 items-start">
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 font-bold text-slate-500 mt-0.5 text-sm">3</div>
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Select "Add to Home Screen"</p>
+                  <p className="text-xs text-slate-500 mt-1">Scroll down the list of actions until you find the <Icons.PlusSquare className="w-3 h-3 inline text-slate-600 mx-1" /> Add to Home Screen option.</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button 
+                onClick={() => setShowIpadInstallModal(false)}
+                className="px-6 py-2 bg-slate-900 text-white rounded-xl font-medium text-sm hover:bg-slate-800 transition"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

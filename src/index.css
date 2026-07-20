@@ -1,6 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+html.dark {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Re-invert things that shouldn't be inverted like images, certain icons, or QR codes */
+html.dark img,
+html.dark video,
+html.dark canvas,
+html.dark .qr-code-container svg {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", sans-serif;

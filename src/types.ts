@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type NodeType = 'button' | 'annotation' | 'panel' | 'input' | 'table';
+export type NodeType = 'button' | 'annotation' | 'panel' | 'input' | 'table' | 'checklist' | 'vitals' | 'medication' | 'timer';
 
 export interface FlowNode {
   id: string;
@@ -32,6 +32,14 @@ export interface FlowNode {
   // Table specific
   tableHeaders?: string[];
   tableRows?: string[][];
+  // Checklist specific
+  checklistItems?: { id: string; text: string }[];
+  // Vitals specific
+  vitalsFields?: { showHR?: boolean; showBP?: boolean; showSpO2?: boolean; showRR?: boolean; showTemp?: boolean };
+  // Medication specific
+  medicationOptions?: string[];
+  // Timer specific
+  timerDurationSec?: number; // Pre-configured countdown duration, or 0 for stopwatch
 }
 
 export interface FlowConnection {

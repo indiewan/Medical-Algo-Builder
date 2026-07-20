@@ -27,9 +27,11 @@ interface FlowchartCanvasProps {
   isEditMode: boolean;
   isSharedResource: boolean;
   isIncidentActive: boolean;
+  searchQuery?: string;
   selectedNodeId: string | null;
+  selectedNodeIds?: string[];
   linkOriginId: string | null; // For connecting nodes together
-  onSelectNode: (id: string | null) => void;
+  onSelectNode: (id: string | null | string[]) => void;
   onUpdateNodeCoordinates: (updates: {id: string, x: number, y: number}[] | string, x?: number, y?: number) => void;
   onUpdateNodeDimensions?: (id: string, width: number, height: number) => void;
   onNodeClickInTracking: (node: FlowNode) => void;
@@ -37,7 +39,7 @@ interface FlowchartCanvasProps {
   onStartTrackingModeLink: (id: string) => void;
   onCompleteLink: (targetId: string) => void;
   onDeleteConnection: (connId: string) => void;
-  activeTimers: { [nodeId: string]: { lastPressedAt: number; counter: string } };
+  activeTimers: { [nodeId: string]: { lastPressedAt: number; counter: string; isExpired?: boolean } };
   activeToggles: Record<string, boolean>;
 }
 
@@ -53,7 +55,9 @@ export default function FlowchartCanvas({
   isEditMode,
   isSharedResource,
   isIncidentActive,
+  searchQuery,
   selectedNodeId,
+  selectedNodeIds = [],
   linkOriginId,
   onSelectNode,
   onUpdateNodeCoordinates,
@@ -75,7 +79,7 @@ export default function FlowchartCanvas({
   
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // using selectedNodeIds instead
   const [marqueeStart, setMarqueeStart] = useState<{x: number, y: number} | null>(null);
   const [marqueeCurrent, setMarqueeCurrent] = useState<{x: number, y: number} | null>(null);
   const [dragStartPos, setDragStartPos] = useState<{x: number, y: number} | null>(null);
@@ -106,18 +110,18 @@ export default function FlowchartCanvas({
 
     e.stopPropagation();
     
-    let newSelectedIds = selectedIds;
+    let newSelectedIds = new Set(selectedNodeIds);
     // Highlight dragging selection
-    if (!e.shiftKey && !selectedIds.has(node.id)) {
+    if (!e.shiftKey && !new Set(selectedNodeIds).has(node.id)) {
       newSelectedIds = new Set([node.id]);
-      setSelectedIds(newSelectedIds);
+      
       onSelectNode(node.id);
     } else if (e.shiftKey) {
-      newSelectedIds = new Set(selectedIds);
+      newSelectedIds = new Set(new Set(selectedNodeIds));
       if (newSelectedIds.has(node.id)) newSelectedIds.delete(node.id);
       else newSelectedIds.add(node.id);
-      setSelectedIds(newSelectedIds);
-      onSelectNode(newSelectedIds.size > 0 ? (Array.from(newSelectedIds) as string[])[newSelectedIds.size - 1] : null);
+      
+      onSelectNode(Array.from(newSelectedIds) as string[]);
     }
 
     const container = containerRef.current;
@@ -380,7 +384,7 @@ export default function FlowchartCanvas({
             setMarqueeStart({ x, y });
             setMarqueeCurrent({ x, y });
             e.currentTarget.setPointerCapture(e.pointerId);
-            if (!e.shiftKey) { setSelectedIds(new Set()); onSelectNode(null); }
+            if (!e.shiftKey) {  onSelectNode(null); }
           }
         }}
         onPointerMove={(e) => {
@@ -399,7 +403,7 @@ export default function FlowchartCanvas({
             const rectW = Math.abs(marqueeCurrent.x - marqueeStart.x);
             const rectH = Math.abs(marqueeCurrent.y - marqueeStart.y);
             
-            const newSelected = new Set(e.shiftKey ? selectedIds : []);
+            const newSelected = new Set(e.shiftKey ? new Set(selectedNodeIds) : []);
             nodes.forEach(n => {
               const nx = n.x * CELL_WIDTH;
               const ny = n.y * CELL_HEIGHT;
@@ -410,7 +414,7 @@ export default function FlowchartCanvas({
                 newSelected.add(n.id);
               }
             });
-            setSelectedIds(newSelected);
+            
             if (newSelected.size > 0) onSelectNode((Array.from(newSelected) as string[])[newSelected.size - 1]);
             
             setMarqueeStart(null);
@@ -519,7 +523,7 @@ export default function FlowchartCanvas({
           .sort((a, b) => (a.type === 'panel' ? -1 : b.type === 'panel' ? 1 : 0))
           .map((node) => {
           const isDragging = draggingId === node.id;
-          const isMultiDragging = draggingId !== null && selectedIds.has(node.id);
+          const isMultiDragging = draggingId !== null && new Set(selectedNodeIds).has(node.id);
           const leftPx = isMultiDragging ? (dragNodesInitialPos.get(node.id)?.x! + dragPos.x) * CELL_WIDTH + 10 : node.x * CELL_WIDTH + 10;
           const topPx = isMultiDragging ? (dragNodesInitialPos.get(node.id)?.y! + dragPos.y) * CELL_HEIGHT + 8 : node.y * CELL_HEIGHT + 8;
           const isResizing = resizingId === node.id;
@@ -535,13 +539,25 @@ export default function FlowchartCanvas({
           const widthPx = activeWidth * CELL_WIDTH - 20;
           const heightPx = activeHeight * CELL_HEIGHT - 16;
           
-          const isSelected = selectedIds.has(node.id);
+          const isSelected = new Set(selectedNodeIds).has(node.id);
           const isOrigin = linkOriginId === node.id;
           const isLinkTarget = linkOriginId !== null && linkOriginId !== node.id;
-          const isToggleActive = !!activeToggles[node.id];
+          const isToggleActive = isIncidentActive && !!activeToggles[node.id];
           
           const timerValue = activeTimers[node.id];
-          const isGrayedOut = trackingDimOverlay;
+          
+          let searchDimmed = false;
+          let highlightSearch = false;
+          if (searchQuery && searchQuery.trim().length > 0) {
+             const lowerQuery = searchQuery.toLowerCase();
+             const matches = (node.label && node.label.toLowerCase().includes(lowerQuery)) || (node.notes && node.notes.toLowerCase().includes(lowerQuery));
+             if (!matches) {
+                searchDimmed = true;
+             } else {
+                highlightSearch = true;
+             }
+          }
+          const isGrayedOut = trackingDimOverlay || searchDimmed;
 
           const fontSizeClass = node.fontSize === 'sm' ? 'text-xs' : 
                                 node.fontSize === 'lg' ? 'text-lg' : 
@@ -610,7 +626,7 @@ export default function FlowchartCanvas({
               <div
                 key={node.id}
                 id={`panel_node_${node.id}`}
-                className={`absolute z-0 flex flex-col p-4 rounded-xl border-2 overflow-hidden transition-all duration-300 ${panelBgColors[panelColor] || panelBgColors.slate} ${isSelected ? 'ring-4 ring-blue-500/50 shadow-md' : 'shadow-sm'}`}
+                className={`absolute z-0 flex flex-col p-4 rounded-xl border-2 overflow-hidden transition-all duration-300 ${panelBgColors[panelColor] || panelBgColors.slate} ${isSelected ? "ring-4 ring-blue-500/50 shadow-md" : (highlightSearch ? "ring-4 ring-yellow-400 shadow-md" : "shadow-sm")}`}
                 style={{
                   left: `${leftPx}px`,
                   top: `${topPx}px`,
@@ -659,7 +675,7 @@ export default function FlowchartCanvas({
               <div
                 key={node.id}
                 id={`input_node_${node.id}`}
-                className={`absolute z-20 flex px-3 py-2 items-center gap-3 bg-white rounded-lg border-2 transition-all duration-300 ${isSelected ? 'ring-4 ring-blue-500/50 border-blue-400' : 'border-slate-300'} ${isGrayedOut && isEditMode ? 'opacity-60' : ''}`}
+                className={`absolute z-20 flex px-3 py-2 items-center gap-3 bg-white rounded-lg border-2 transition-all duration-300 ${isSelected ? "ring-4 ring-blue-500/50 border-blue-400" : (highlightSearch ? "ring-4 ring-yellow-400 border-yellow-400" : "border-slate-300")} ${isGrayedOut && isEditMode ? 'opacity-60' : ''}`}
                 style={{
                   left: `${leftPx}px`,
                   top: `${topPx}px`,
@@ -759,6 +775,138 @@ export default function FlowchartCanvas({
              );
           }
 
+          if (node.type === 'checklist') {
+             return (
+              <div
+                key={node.id}
+                id={`chk_node_${node.id}`}
+                className={`absolute z-10 flex flex-col bg-white rounded-xl border-2 overflow-hidden transition-all duration-300 ${isSelected ? 'ring-4 ring-blue-500/50 border-blue-400' : 'border-slate-300'}`}
+                style={{ left: `${leftPx}px`, top: `${topPx}px`, width: `${widthPx}px`, height: `${heightPx}px`, cursor: isEditMode ? 'move' : 'default', touchAction: 'none' }}
+                onPointerDown={(e) => handlePointerDown(e, node)}
+                onPointerMove={(e) => handlePointerMove(e, node)}
+                onPointerUp={(e) => handlePointerUp(e, node)}
+                onClick={(e) => { e.stopPropagation(); if (isEditMode) { if (isLinkTarget) onCompleteLink(node.id); else onSelectNode(node.id); } }}
+              >
+                <div className={`w-full py-1.5 px-3 flex items-center justify-between border-b ${panelBgColors[node.color || 'slate']} ${panelTextColors[node.color || 'slate']}`}>
+                    <h3 className={`font-bold whitespace-nowrap ${fontSizeClass} ${fontWeightClass}`}>{node.label}</h3>
+                    {isEditMode && <div className="text-[9px] bg-black/10 px-1 rounded font-mono">CHK</div>}
+                </div>
+                <div className="flex-1 overflow-auto pointer-events-auto p-2 relative flex flex-col gap-2">
+                   {node.checklistItems?.map((item) => (
+                     <label key={item.id} className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer p-1 hover:bg-slate-50 rounded">
+                        <input type="checkbox" className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" onClick={(e) => { if (isEditMode) e.preventDefault(); }} onChange={(e) => { if (!isEditMode && onDataLog) onDataLog(`${node.label} - ${item.text}`, e.target.checked ? 'Checked' : 'Unchecked'); }} />
+                        <span className="leading-tight">{item.text}</span>
+                     </label>
+                   ))}
+                   {renderLinkButton()}
+                   {renderResizeHandle()}
+                </div>
+              </div>
+             );
+          }
+
+          if (node.type === 'vitals') {
+             return (
+              <div
+                key={node.id}
+                id={`vitals_node_${node.id}`}
+                className={`absolute z-10 flex flex-col bg-white rounded-xl border-2 overflow-hidden transition-all duration-300 ${isSelected ? 'ring-4 ring-blue-500/50 border-blue-400' : 'border-slate-300'}`}
+                style={{ left: `${leftPx}px`, top: `${topPx}px`, width: `${widthPx}px`, height: `${heightPx}px`, cursor: isEditMode ? 'move' : 'default', touchAction: 'none' }}
+                onPointerDown={(e) => handlePointerDown(e, node)}
+                onPointerMove={(e) => handlePointerMove(e, node)}
+                onPointerUp={(e) => handlePointerUp(e, node)}
+                onClick={(e) => { e.stopPropagation(); if (isEditMode) { if (isLinkTarget) onCompleteLink(node.id); else onSelectNode(node.id); } }}
+              >
+                <div className={`w-full py-1.5 px-3 flex items-center justify-between border-b ${panelBgColors[node.color || 'blue']} ${panelTextColors[node.color || 'blue']}`}>
+                    <h3 className={`font-bold whitespace-nowrap flex items-center gap-2 ${fontSizeClass} ${fontWeightClass}`}><Icons.HeartPulse className="w-4 h-4" />{node.label}</h3>
+                    {isEditMode && <div className="text-[9px] bg-black/10 px-1 rounded font-mono">VITALS</div>}
+                </div>
+                <div className="flex-1 overflow-auto pointer-events-auto p-3 relative grid grid-cols-2 gap-3 items-start content-start">
+                   {node.vitalsFields?.showHR && <div className="flex flex-col"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">HR (bpm)</label><input type="number" placeholder="bpm" className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" onClick={(e) => { if(isEditMode) e.preventDefault(); e.stopPropagation(); }} onBlur={(e) => { if (!isEditMode && e.target.value && onDataLog) onDataLog(`${node.label} - HR`, e.target.value); }} /></div>}
+                   {node.vitalsFields?.showBP && <div className="flex flex-col"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">BP (SYS/DIA)</label><input type="text" placeholder="SYS/DIA" className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" onClick={(e) => { if(isEditMode) e.preventDefault(); e.stopPropagation(); }} onBlur={(e) => { if (!isEditMode && e.target.value && onDataLog) onDataLog(`${node.label} - BP`, e.target.value); }} /></div>}
+                   {node.vitalsFields?.showSpO2 && <div className="flex flex-col"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">SpO2 %</label><input type="number" placeholder="%" className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" onClick={(e) => { if(isEditMode) e.preventDefault(); e.stopPropagation(); }} onBlur={(e) => { if (!isEditMode && e.target.value && onDataLog) onDataLog(`${node.label} - SpO2`, e.target.value); }} /></div>}
+                   {node.vitalsFields?.showRR && <div className="flex flex-col"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Resp Rate</label><input type="number" placeholder="resp/m" className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" onClick={(e) => { if(isEditMode) e.preventDefault(); e.stopPropagation(); }} onBlur={(e) => { if (!isEditMode && e.target.value && onDataLog) onDataLog(`${node.label} - RR`, e.target.value); }} /></div>}
+                   {node.vitalsFields?.showTemp && <div className="flex flex-col"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Temp °C</label><input type="number" placeholder="°C" className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" onClick={(e) => { if(isEditMode) e.preventDefault(); e.stopPropagation(); }} onBlur={(e) => { if (!isEditMode && e.target.value && onDataLog) onDataLog(`${node.label} - Temp`, e.target.value); }} /></div>}
+                   {renderLinkButton()}
+                   {renderResizeHandle()}
+                </div>
+              </div>
+             );
+          }
+
+          if (node.type === 'medication') {
+             return (
+              <div
+                key={node.id}
+                id={`med_node_${node.id}`}
+                className={`absolute z-10 flex flex-col bg-white rounded-xl border-2 overflow-hidden transition-all duration-300 ${isSelected ? 'ring-4 ring-blue-500/50 border-blue-400' : 'border-slate-300'}`}
+                style={{ left: `${leftPx}px`, top: `${topPx}px`, width: `${widthPx}px`, height: `${heightPx}px`, cursor: isEditMode ? 'move' : 'default', touchAction: 'none' }}
+                onPointerDown={(e) => handlePointerDown(e, node)}
+                onPointerMove={(e) => handlePointerMove(e, node)}
+                onPointerUp={(e) => handlePointerUp(e, node)}
+                onClick={(e) => { e.stopPropagation(); if (isEditMode) { if (isLinkTarget) onCompleteLink(node.id); else onSelectNode(node.id); } }}
+              >
+                <div className={`w-full py-1.5 px-3 flex items-center justify-between border-b ${panelBgColors[node.color || 'rose']} ${panelTextColors[node.color || 'rose']}`}>
+                    <h3 className={`font-bold whitespace-nowrap flex items-center gap-2 ${fontSizeClass} ${fontWeightClass}`}><Icons.Syringe className="w-4 h-4" />{node.label}</h3>
+                    {isEditMode && <div className="text-[9px] bg-black/10 px-1 rounded font-mono">MED</div>}
+                </div>
+                <div className="flex-1 overflow-auto pointer-events-auto p-2 relative flex flex-col gap-2">
+                   {node.medicationOptions?.map((med, idx) => (
+                     <button key={idx} onClick={(e) => { if (isEditMode) e.preventDefault(); e.stopPropagation(); if (!isEditMode && onDataLog) onDataLog(`${node.label} given`, med); }} className="px-3 py-2 bg-rose-50 text-rose-700 text-sm font-semibold rounded-lg hover:bg-rose-100 border border-rose-200 shadow-sm active:scale-95 transition-all w-full text-left flex items-center justify-between cursor-pointer">
+                        <span>{med}</span>
+                        <div className="bg-white rounded-md p-1 shadow-sm border border-rose-100">
+                          <Icons.Plus className="w-3 h-3 text-rose-600" />
+                        </div>
+                     </button>
+                   ))}
+                   {renderLinkButton()}
+                   {renderResizeHandle()}
+                </div>
+              </div>
+             );
+          }
+
+          if (node.type === 'timer') {
+             const isExpired = timerValue?.isExpired;
+             return (
+              <div
+                key={node.id}
+                id={`timer_node_${node.id}`}
+                className={`absolute z-10 flex flex-col bg-white rounded-xl border-2 overflow-hidden transition-all duration-300 ${isSelected ? 'ring-4 ring-blue-500/50 border-blue-400' : isExpired ? 'border-red-500 ring-4 ring-red-500/30' : 'border-slate-300'}`}
+                style={{ left: `${leftPx}px`, top: `${topPx}px`, width: `${widthPx}px`, height: `${heightPx}px`, cursor: isEditMode ? 'move' : 'pointer', touchAction: 'none' }}
+                onPointerDown={(e) => handlePointerDown(e, node)}
+                onPointerMove={(e) => handlePointerMove(e, node)}
+                onPointerUp={(e) => handlePointerUp(e, node)}
+                onClick={(e) => { 
+                   e.stopPropagation(); 
+                   if (isEditMode) { 
+                      if (isLinkTarget) onCompleteLink(node.id); 
+                      else onSelectNode(node.id); 
+                   } else if (isIncidentActive) {
+                      onNodeClickInTracking(node);
+                   }
+                }}
+              >
+                <div className={`w-full py-1.5 px-3 flex items-center justify-between border-b ${panelBgColors[node.color || 'amber']} ${panelTextColors[node.color || 'amber']}`}>
+                    <h3 className={`font-bold whitespace-nowrap flex items-center gap-2 ${fontSizeClass} ${fontWeightClass}`}><Icons.Timer className="w-4 h-4" />{node.label}</h3>
+                    {isEditMode && <div className="text-[9px] bg-black/10 px-1 rounded font-mono">TIMER</div>}
+                </div>
+                <div className="flex-1 pointer-events-auto relative flex flex-col items-center justify-center p-2">
+                   <div className={`font-mono text-4xl font-bold tracking-tight ${timerValue ? (isExpired ? 'text-red-600 animate-pulse' : 'text-slate-800') : 'text-slate-300'}`}>
+                      {timerValue ? timerValue.counter : (node.timerDurationSec ? `${Math.floor(node.timerDurationSec/60)}:${(node.timerDurationSec%60).toString().padStart(2, '0')}` : '0:00')}
+                   </div>
+                   {!isEditMode && isIncidentActive && (
+                      <div className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">
+                         {timerValue ? (isExpired ? 'EXPIRED' : 'RUNNING (TAP TO RESET)') : 'TAP TO START'}
+                      </div>
+                   )}
+                   {renderLinkButton()}
+                   {renderResizeHandle()}
+                </div>
+              </div>
+             );
+          }
+
           // Text Annotation Layout (Differs completely from button actions)
           if (node.type === 'annotation') {
 
@@ -767,7 +915,7 @@ export default function FlowchartCanvas({
                 key={node.id}
                 id={`ann_node_${node.id}`}
                 className={`absolute z-20 overflow-visible transition-all duration-300 rounded-xl p-3 flex flex-row items-start gap-2.5 bg-slate-50/90 border border-dashed text-slate-600 font-sans ${
-                  isSelected ? 'ring-2 ring-blue-500 border-blue-400 shadow-sm' : 'border-slate-300 hover:border-slate-400'
+                  isSelected ? "ring-2 ring-blue-500 border-blue-400 shadow-sm" : (highlightSearch ? "ring-2 ring-yellow-400 border-yellow-400 shadow-sm" : "border-slate-300 hover:border-slate-400")
                 } ${isGrayedOut ? 'opacity-60 grayscale-[0.8] pointer-events-none' : ''}`}
                 style={{
                   left: `${leftPx}px`,
@@ -890,7 +1038,7 @@ export default function FlowchartCanvas({
               {renderLinkButton()}
 
               {/* Tracking session local timers (Floating Top Left) */}
-              {timerValue && (
+              {isIncidentActive && timerValue && (
                 <div className="absolute -top-3 -left-3 bg-red-600 text-white font-mono text-xs font-bold px-2 py-1 rounded-full shadow-md animate-pulse z-40">
                   🕛 {timerValue.counter}
                 </div>

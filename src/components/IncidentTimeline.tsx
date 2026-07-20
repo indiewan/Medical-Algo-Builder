@@ -40,6 +40,27 @@ export default function IncidentTimeline({
     window.print();
   };
 
+  const handleExportCSV = () => {
+    const csvContent = [
+      ['Timestamp', 'Event', 'Duration', 'Notes'],
+      ...session.logs.map(log => [
+        log.timestamp,
+        log.nodeLabel,
+        log.elapsedFormatted,
+        `"${(log.notes || '').replace(/"/g, '""')}"`
+      ])
+    ].map(e => e.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `incident_log_${session.id}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const systemLogs = session.logs.filter(l => l.isSystemEvent);
   const actionLogs = session.logs.filter(l => !l.isSystemEvent);
 
@@ -78,6 +99,13 @@ export default function IncidentTimeline({
                   Copy Markdown
                 </>
               )}
+            </button>
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-4 py-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-medium transition cursor-pointer"
+            >
+              <ClipboardList className="w-4 h-4" />
+              Export CSV
             </button>
             {session.snapshotDataUrl && (
               <a

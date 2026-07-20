@@ -5,7 +5,9 @@
 
 import React, { useState, useEffect } from 'react';
 import * as Icons from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { FlowNode, MedicalAlgorithm, FlowConnection } from '../types.ts';
+import { VitalsTracker } from './VitalsTracker.tsx';
 
 // Dynamic Lucide icon helper
 const DynamicIcon = ({ name, className }: { name: string; className?: string }) => {
@@ -34,7 +36,7 @@ interface SidebarProps {
   onUpdateSelectedNode: (updated: Partial<FlowNode>) => void;
   onDeleteSelectedNode: () => void;
   onDuplicateSelectedNode: () => void;
-  onAddNode: (type: 'button' | 'annotation' | 'panel' | 'input' | 'table') => void;
+  onAddNode: (type: FlowNode['type']) => void;
   onStartTrackingModeLink: (id: string) => void;
   onDeleteConnection: (connId: string) => void;
   onUpdateConnection: (connId: string, updates: Partial<FlowConnection>) => void;
@@ -44,8 +46,11 @@ interface SidebarProps {
   onLoadTemplate: (algo: MedicalAlgorithm) => void;
   onSaveToLibrary: (name: string) => void;
   onDeleteFromLibrary: (id: string) => void;
+  onRenameFromLibrary: (id: string, newName: string) => void;
   onPublishShare: () => string;
   onCancelLog?: (id: string) => void;
+  onExportLibrary: () => void;
+  onImportLibrary: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 // Medical/Emergency themed icons list
@@ -79,13 +84,22 @@ export default function Sidebar({
   onLoadTemplate,
   onSaveToLibrary,
   onDeleteFromLibrary,
+  onRenameFromLibrary,
   onPublishShare,
   onCancelLog,
+  onExportLibrary,
+  onImportLibrary,
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<'edit' | 'library'>('edit');
   const [customAlgoName, setCustomAlgoName] = useState('');
   const [isShareSuccess, setIsShareSuccess] = useState(false);
   const [shareLink, setShareLink] = useState('');
+  
+  // Library Interaction States
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const handleShareClick = () => {
     const link = onPublishShare();
@@ -301,6 +315,9 @@ export default function Sidebar({
               </button>
             </form>
             
+            {/* VITALS TRACKER */}
+            <VitalsTracker onLogVitals={onAdHocNoteSubmit} />
+
             {/* Quick instructions indicator during live session */}
             <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl space-y-1.5">
               <span className="text-xs font-bold text-slate-700 font-display flex items-center gap-1.5">
@@ -352,6 +369,34 @@ export default function Sidebar({
                 >
                   <Icons.Keyboard className="w-3.5 h-3.5" />
                   + Input Field
+                </button>
+                <button
+                  onClick={() => onAddNode('checklist')}
+                  className="flex items-center gap-2 justify-center py-2 bg-orange-50 text-orange-700 border border-orange-200 rounded-xl text-xs font-semibold hover:bg-orange-100 transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <Icons.ListChecks className="w-3.5 h-3.5" />
+                  + Checklist
+                </button>
+                <button
+                  onClick={() => onAddNode('vitals')}
+                  className="flex items-center gap-2 justify-center py-2 bg-red-50 text-red-700 border border-red-200 rounded-xl text-xs font-semibold hover:bg-red-100 transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <Icons.HeartPulse className="w-3.5 h-3.5" />
+                  + Vitals
+                </button>
+                <button
+                  onClick={() => onAddNode('medication')}
+                  className="flex items-center gap-2 justify-center py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold hover:bg-indigo-100 transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <Icons.Syringe className="w-3.5 h-3.5" />
+                  + Medication Tracker
+                </button>
+                <button
+                  onClick={() => onAddNode('timer')}
+                  className="flex items-center gap-2 justify-center py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-xs font-semibold hover:bg-amber-100 transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <Icons.Timer className="w-3.5 h-3.5" />
+                  + Timer/Stopwatch
                 </button>
                 <button
                   onClick={() => onAddNode('table')}
@@ -544,6 +589,78 @@ export default function Sidebar({
                             value={(selectedNode.tableRows || []).map(r => r.join(', ')).join('\n')}
                             onChange={(e) => onUpdateSelectedNode({ tableRows: e.target.value.split('\n').map(r => r.split(',').map(s=>s.trim())) })}
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900 resize-y"
+                          />
+                     </div>
+                  </div>
+                )}
+
+                {/* Properties for Checklist Nodes */}
+                {selectedNode.type === 'checklist' && (
+                  <div className="space-y-3">
+                     <div className="space-y-1">
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                            Checklist Items (One per line)
+                          </label>
+                          <textarea
+                            rows={4}
+                            value={(selectedNode.checklistItems || []).map(item => item.text).join('\n')}
+                            onChange={(e) => onUpdateSelectedNode({ checklistItems: e.target.value.split('\n').filter(s => s.trim()).map(s => ({ id: `chk_${Date.now()}_${Math.random()}`, text: s.trim() })) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900 resize-y"
+                          />
+                     </div>
+                  </div>
+                )}
+
+                {/* Properties for Vitals Nodes */}
+                {selectedNode.type === 'vitals' && (
+                  <div className="space-y-3">
+                     <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                        Display Vital Fields
+                     </label>
+                     <div className="grid grid-cols-2 gap-2">
+                        {['HR', 'BP', 'SpO2', 'RR', 'Temp'].map(field => {
+                            const showKey = `show${field}` as keyof NonNullable<FlowNode['vitalsFields']>;
+                            const isChecked = selectedNode.vitalsFields?.[showKey] || false;
+                            return (
+                              <label key={field} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                  <input type="checkbox" checked={isChecked} onChange={(e) => onUpdateSelectedNode({ vitalsFields: { ...selectedNode.vitalsFields, [showKey]: e.target.checked }})} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                                  <span>{field}</span>
+                              </label>
+                            );
+                        })}
+                     </div>
+                  </div>
+                )}
+
+                {/* Properties for Medication Nodes */}
+                {selectedNode.type === 'medication' && (
+                  <div className="space-y-3">
+                     <div className="space-y-1">
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                            Medication Options (One per line)
+                          </label>
+                          <textarea
+                            rows={4}
+                            value={(selectedNode.medicationOptions || []).join('\n')}
+                            onChange={(e) => onUpdateSelectedNode({ medicationOptions: e.target.value.split('\n').filter(s => s.trim()).map(s => s.trim()) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900 resize-y"
+                          />
+                     </div>
+                  </div>
+                )}
+
+                {/* Properties for Timer Nodes */}
+                {selectedNode.type === 'timer' && (
+                  <div className="space-y-3">
+                     <div className="space-y-1">
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-display">
+                            Timer Duration (Sec, 0 for Stopwatch)
+                          </label>
+                          <input
+                            type="number"
+                            value={selectedNode.timerDurationSec || 0}
+                            onChange={(e) => onUpdateSelectedNode({ timerDurationSec: parseInt(e.target.value, 10) || 0 })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
                           />
                      </div>
                   </div>
@@ -798,8 +915,32 @@ export default function Sidebar({
 
               {/* Share link visual display */}
               {shareLink && (
-                <div className="text-[10px] font-mono break-all p-2 bg-white/70 border border-slate-100 rounded text-slate-500">
-                  {shareLink}
+                <div className="space-y-3">
+                  <div className="text-[10px] font-mono break-all p-2 bg-white/70 border border-slate-100 rounded text-slate-500">
+                    {shareLink}
+                  </div>
+                  {shareLink.length <= 1200 ? (
+                    <div className="flex flex-col items-center justify-center p-4 bg-white border border-slate-200 rounded-xl space-y-2 shadow-sm">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scan to Open Protocol</span>
+                      <div className="p-2 bg-white rounded-lg border border-slate-100 shadow-xs qr-code-container">
+                        <QRCodeSVG value={shareLink} size={140} level="L" includeMargin={true} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                      <p className="text-[10px] text-orange-700 text-center font-medium">Link is too long for QR Code. Use the Share button below.</p>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      // Dispatches custom event to be picked up by App.tsx
+                      window.dispatchEvent(new CustomEvent('show-ipad-install-modal'));
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs rounded-xl transition-all shadow-sm"
+                  >
+                    <Icons.MonitorSmartphone className="w-4 h-4" />
+                    Add to iPad Home Screen
+                  </button>
                 </div>
               )}
             </div>
@@ -855,10 +996,22 @@ export default function Sidebar({
 
             {/* Loaded Algoritms list */}
             <div className="space-y-4">
+              {/* Search Bar */}
+              <div className="relative">
+                <Icons.Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search protocols..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
+                />
+              </div>
+
               {/* Ready clinical scenarios templates */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest font-display">Loaded Scenarios</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest font-display">Pre-loaded Scenarios</span>
                   <button
                     onClick={() => {
                       onLoadTemplate({
@@ -878,25 +1031,29 @@ export default function Sidebar({
                   </button>
                 </div>
                 <div className="space-y-2">
-                  {templates.map((temp) => {
-                    const isCurrent = selectedAlgo.id === temp.id;
-                    return (
-                      <div
-                        key={temp.id}
-                        id={`tpl_select_${temp.id}`}
-                        className={`p-3 border rounded-xl hover:bg-slate-52 cursor-pointer transition flex justify-between items-center ${
-                          isCurrent ? 'bg-slate-50 border-slate-900 ring-1 ring-slate-900' : 'bg-white border-slate-200'
-                        }`}
-                        onClick={() => onLoadTemplate(temp)}
-                      >
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900 font-display">{temp.name}</h4>
-                          <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">{temp.description}</p>
+                  {templates.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()) || t.description.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-center py-2">No matching scenarios found.</p>
+                  ) : (
+                    templates.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()) || t.description.toLowerCase().includes(searchQuery.toLowerCase())).map((temp) => {
+                      const isCurrent = selectedAlgo.id === temp.id;
+                      return (
+                        <div
+                          key={temp.id}
+                          id={`tpl_select_${temp.id}`}
+                          className={`p-3 border rounded-xl hover:bg-slate-50 cursor-pointer transition flex justify-between items-center ${
+                            isCurrent ? 'bg-slate-50 border-slate-900 ring-1 ring-slate-900' : 'bg-white border-slate-200'
+                          }`}
+                          onClick={() => onLoadTemplate(temp)}
+                        >
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900 font-display">{temp.name}</h4>
+                            <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">{temp.description}</p>
+                          </div>
+                          <Icons.ChevronRight className="w-4 h-4 text-slate-400" />
                         </div>
-                        <Icons.ChevronRight className="w-4 h-4 text-slate-400" />
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -905,9 +1062,11 @@ export default function Sidebar({
                 <span className="block text-xs font-bold text-slate-400 uppercase tracking-widest font-display">My Saved Protocols ({userSavedAlgos.length})</span>
                 {userSavedAlgos.length === 0 ? (
                   <p className="text-xs text-slate-400 italic text-center py-6">No custom workflows saved yet. Use the block above to save your layout.</p>
+                ) : userSavedAlgos.filter(a => a.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                  <p className="text-xs text-slate-400 italic text-center py-2">No matching saved protocols found.</p>
                 ) : (
                   <div className="space-y-2">
-                    {userSavedAlgos.map((algo) => {
+                    {userSavedAlgos.filter(a => a.name.toLowerCase().includes(searchQuery.toLowerCase())).map((algo) => {
                       const isCurrent = selectedAlgo.id === algo.id;
                       return (
                         <div
@@ -916,17 +1075,94 @@ export default function Sidebar({
                             isCurrent ? 'bg-slate-50 border-slate-900 ring-1 ring-slate-900' : 'bg-white border-slate-200'
                           }`}
                         >
-                          <div className="flex-1 cursor-pointer" onClick={() => onLoadTemplate(algo)}>
-                            <h4 className="text-xs font-bold text-slate-900 font-display">{algo.name}</h4>
-                            <p className="text-[10px] text-slate-500 font-mono mt-0.5">Custom Saved</p>
+                          <div className="flex-1">
+                            {editingId === algo.id ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  value={editingName}
+                                  onChange={(e) => setEditingName(e.target.value)}
+                                  className="w-full px-2 py-1 text-xs border border-emerald-500 rounded focus:outline-none"
+                                  autoFocus
+                                />
+                                <button
+                                  onClick={() => {
+                                    if (editingName.trim()) {
+                                      onRenameFromLibrary(algo.id, editingName.trim());
+                                    }
+                                    setEditingId(null);
+                                  }}
+                                  className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                                  title="Save"
+                                >
+                                  <Icons.Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingId(null)}
+                                  className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                                  title="Cancel"
+                                >
+                                  <Icons.X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="cursor-pointer" onClick={() => onLoadTemplate(algo)}>
+                                <h4 className="text-xs font-bold text-slate-900 font-display">{algo.name}</h4>
+                                <p className="text-[10px] text-slate-500 font-mono mt-0.5">Custom Saved</p>
+                              </div>
+                            )}
                           </div>
-                          <button
-                            onClick={() => onDeleteFromLibrary(algo.id)}
-                            className="p-1 px-1.5 text-red-500 hover:bg-red-50 hover:text-red-700 transition rounded ml-2"
-                            title="Delete Protocol"
-                          >
-                            <Icons.Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          
+                          {editingId !== algo.id && (
+                            <div className="flex items-center ml-2">
+                              {deleteConfirmId === algo.id ? (
+                                <div className="flex items-center gap-1 bg-red-50 p-1 rounded border border-red-100">
+                                  <span className="text-[10px] font-bold text-red-600 px-1">Delete?</span>
+                                  <button
+                                    onClick={() => {
+                                      onDeleteFromLibrary(algo.id);
+                                      setDeleteConfirmId(null);
+                                    }}
+                                    className="p-1 bg-red-600 text-white hover:bg-red-700 transition rounded"
+                                    title="Confirm Delete"
+                                  >
+                                    <Icons.Check className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteConfirmId(null)}
+                                    className="p-1 text-slate-500 hover:bg-slate-200 transition rounded"
+                                    title="Cancel"
+                                  >
+                                    <Icons.X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setEditingId(algo.id);
+                                      setEditingName(algo.name);
+                                      setDeleteConfirmId(null);
+                                    }}
+                                    className="p-1 px-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition rounded"
+                                    title="Rename Protocol"
+                                  >
+                                    <Icons.Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setDeleteConfirmId(algo.id);
+                                      setEditingId(null);
+                                    }}
+                                    className="p-1 px-1.5 text-red-500 hover:bg-red-50 hover:text-red-700 transition rounded"
+                                    title="Delete Protocol"
+                                  >
+                                    <Icons.Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -934,6 +1170,25 @@ export default function Sidebar({
                 )}
               </div>
             </div>
+
+            {/* Export and Import Library actions */}
+            {!isIncidentActive && (
+              <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
+                 <span className="block text-xs font-bold text-slate-400 uppercase tracking-widest font-display mb-1">Library Backup & Transfer</span>
+                 <button
+                   onClick={onExportLibrary}
+                   className="flex items-center justify-center gap-2 py-2 w-full bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200 transition cursor-pointer"
+                 >
+                   <Icons.Download className="w-4 h-4" />
+                   Export Library to JSON
+                 </button>
+                 <label className="flex items-center justify-center gap-2 py-2 w-full bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200 transition cursor-pointer">
+                   <Icons.Upload className="w-4 h-4" />
+                   Import Library from JSON
+                   <input type="file" accept=".json" onChange={onImportLibrary} className="hidden" />
+                 </label>
+              </div>
+            )}
 
           </div>
         )}
