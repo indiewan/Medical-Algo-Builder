@@ -49,6 +49,7 @@ interface SidebarProps {
   onRenameFromLibrary: (id: string, newName: string) => void;
   onPublishShare: () => string;
   onCancelLog?: (id: string) => void;
+  onUpdateLogNote?: (id: string, note: string) => void;
   onExportLibrary: () => void;
   onImportLibrary: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }
@@ -87,6 +88,7 @@ export default function Sidebar({
   onRenameFromLibrary,
   onPublishShare,
   onCancelLog,
+  onUpdateLogNote,
   onExportLibrary,
   onImportLibrary,
 }: SidebarProps) {
@@ -100,6 +102,9 @@ export default function Sidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [editingNoteLogId, setEditingNoteLogId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState('');
 
   const handleShareClick = () => {
     const link = onPublishShare();
@@ -264,24 +269,77 @@ export default function Sidebar({
                         {log.notes}
                       </p>
                     )}
-                    <div className="mt-1 flex justify-between items-center">
-                      {!log.isAccidental ? (
-                        <button 
-                          onClick={() => onCancelLog && onCancelLog(log.id)}
-                          className="text-[9px] uppercase font-bold text-slate-400 hover:text-red-600 tracking-wider flex items-center gap-1 transition-colors"
+                    
+                    {editingNoteLogId === log.id ? (
+                      <div className="mt-2 flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={editingNoteText}
+                          onChange={(e) => setEditingNoteText(e.target.value)}
+                          placeholder="Type note..."
+                          className="flex-1 text-xs px-2 py-1 border border-slate-200 rounded"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              if (onUpdateLogNote) {
+                                onUpdateLogNote(log.id, editingNoteText);
+                              }
+                              setEditingNoteLogId(null);
+                            } else if (e.key === 'Escape') {
+                              setEditingNoteLogId(null);
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            if (onUpdateLogNote) {
+                              onUpdateLogNote(log.id, editingNoteText);
+                            }
+                            setEditingNoteLogId(null);
+                          }}
+                          className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100"
                         >
-                          <Icons.XCircle className="w-3 h-3" />
-                          Mark Accidental
+                          <Icons.Check className="w-3.5 h-3.5" />
                         </button>
-                      ) : (
-                        <span className="text-[9px] uppercase font-bold text-red-500 tracking-wider">
-                          Cancelled Action
+                        <button
+                          onClick={() => setEditingNoteLogId(null)}
+                          className="px-2 py-1 bg-slate-50 text-slate-500 rounded hover:bg-slate-100"
+                        >
+                          <Icons.X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-1 flex justify-between items-center">
+                        {!log.isAccidental ? (
+                          <div className="flex items-center gap-3">
+                            <button 
+                              onClick={() => onCancelLog && onCancelLog(log.id)}
+                              className="text-[9px] uppercase font-bold text-slate-400 hover:text-red-600 tracking-wider flex items-center gap-1 transition-colors"
+                            >
+                              <Icons.XCircle className="w-3 h-3" />
+                              Mark Accidental
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingNoteLogId(log.id);
+                                setEditingNoteText(log.notes || '');
+                              }}
+                              className="text-[9px] uppercase font-bold text-slate-400 hover:text-emerald-600 tracking-wider flex items-center gap-1 transition-colors"
+                            >
+                              <Icons.MessageSquarePlus className="w-3 h-3" />
+                              {log.notes ? 'Edit Note' : 'Add Note'}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[9px] uppercase font-bold text-red-500 tracking-wider">
+                            Cancelled Action
+                          </span>
+                        )}
+                        <span className={`text-[10px] font-semibold font-mono ${log.isAccidental ? 'text-red-500' : 'text-emerald-600'}`}>
+                          +{log.elapsedFormatted}
                         </span>
-                      )}
-                      <span className={`text-[10px] font-semibold font-mono ${log.isAccidental ? 'text-red-500' : 'text-emerald-600'}`}>
-                        +{log.elapsedFormatted}
-                      </span>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 ))
               )}

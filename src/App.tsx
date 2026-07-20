@@ -789,6 +789,17 @@ export default function App() {
     });
   };
 
+  const handleUpdateLogNote = (logId: string, note: string) => {
+    if (!incidentSession) return;
+    
+    setIncidentSession({
+      ...incidentSession,
+      logs: incidentSession.logs.map(log => 
+        log.id === logId ? { ...log, notes: note } : log
+      )
+    });
+  };
+
   const handleStopIncident = async () => {
     if (!incidentSession) return;
 
@@ -1159,6 +1170,7 @@ export default function App() {
             onRenameFromLibrary={handleRenameFromLibrary}
             onPublishShare={handlePublishShare}
             onCancelLog={handleCancelLog}
+            onUpdateLogNote={handleUpdateLogNote}
             onExportLibrary={handleExportLibrary}
             onImportLibrary={handleImportLibrary}
           />
